@@ -1,1 +1,5 @@
 /target
+/injector/target
+/example_dll/target
+/launcher/target
+
