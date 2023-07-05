@@ -38,3 +38,11 @@ When a process is started, not all modules are loaded at the same time. This mea
 3. If there were no matches, then the target process's main thread is taken out of the suspended state for a short period of time, say 1ms, and this will give the thread time to load more modules.
   
 4. Repeat steps 1-3 until match is found: After a match is found, place the main thread back into a suspended state.
+
+Notes on API hooking
+
+In this example, I will be attempting to hook the `fwrite` function which is located in the `msvcrt.dll` module. To do this, I will be using the DLL injector described above and equipping it with a DllMain (which gets called automatically by LoadLibraryA) to modify the IAT (import address table) of `msvcrt.dll`. Specifically, I will need to locate the address in the IAT that points to `fwrite` and replace this address with the address of my hook function. The hook function will then receive the arguments which were intended for `fwrite`. 
+
+However, it is not apparent in what order my DLL is loaded with respect to the other modules that are loaded by the target process. So to be able to successfully hook `fwrite`, I need to be sure that the `msvcrt.dll` has been loaded. How can one be certain of this? Well, since the DLL injector waits for `kernel32.dll` to be loaded before loading in my DLL, we can be certain that `kernel32.dll` is present at the time my DllMain is running. So what? So this means that any subsequent module loads will be done with `LoadLibrary` which is a funtion within `kernel32`. That means, we can hook `LoadLibrary` to see when the target module (`mscvrt.dll`) is loaded. 
+
+So the first step is to check if the desired module has been loaded already. If it has, then jump to the function in DllMain which makes the IAT modification. Otherwise, hook `LoadLibrary` and write a hook function which calls the iat_mod function, then hands the given arguments back over to `LoadLibrary`. Technically, you would want to allow `LoadLibrary` to proceed first, then modify the IAT since the IAT will only be present after the module is loaded.  
