@@ -87,6 +87,8 @@ fn perform_hook_if_module_loaded(target_module_name: &str) {
             },
         };
 
+        test_msgbox("IAT Address", format!("{:X}", iat_addr).as_str());
+
         // Now that we have the address of the IAT, we can perform the hook
         // by calling the perform_hook function which will return the address
         // of the original function
@@ -168,7 +170,7 @@ fn locate_iat(import_directory_addr: usize, exe_base_addr: usize, target_module:
     
             // If the module name matches the target module, we can return the address of the IAT
             if module_name_str == target_module {
-                return Ok((*import_descriptor).FirstThunk as usize);
+                return Ok((exe_base_addr  + (*import_descriptor).FirstThunk as usize) as usize);
             }
     
             import_descriptor = import_descriptor.offset(1);
