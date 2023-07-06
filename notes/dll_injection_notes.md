@@ -39,6 +39,42 @@ When a process is started, not all modules are loaded at the same time. This mea
   
 4. Repeat steps 1-3 until match is found: After a match is found, place the main thread back into a suspended state.
 
+Notes on The Import Address Table (IAT)
+
+Every PE (Portable Executable) file has a structure embedded within it called the Import Address Table (IAT). This table contains addresses pointing to the functions that the PE file, or executable, imports from a collection of external modules or libraries (such as DLLs). The purpose of having the IAT is to provide an efficient way for the executable to find and call these imported functions at runtime without needing to search for them every time.
+
+When an executable is loaded into memory, the Windows loader populates the IAT. As each external module is loaded and mapped into the memory space of the process, the loader fills in the IAT entries with the actual runtime addresses of the imported functions in these modules. Therefore, the IAT is crucial for the executable to correctly call external functions during execution.
+
+In this context, the term 'image' typically refers to the in-memory representation of the executable or a module. The 'image' is the loaded state of the PE file, with all sections and dependencies correctly placed in the virtual memory space of the process.
+
+
+Notes on Locating the IAT in a PE File
+
+The Import Address Table (IAT) is an integral part of a PE (Portable Executable) file, housed within several nesting structures. Understanding the organization of a PE file, defined by the WINNT documentation, is vital to locating the IAT.
+
+The PE file starts with the DOS_HEADER. This structure contains numerous members, with lfa_new being significant. lfa_new stores the offset from the image's base address to the PE signature, guiding us to the next stage of the PE file, the PE signature.
+
+The PE signature introduces the NT_HEADER. The address at the PE signature can be interpreted as the beginning of an NT_HEADER structure. Within the NT_HEADER, there's a member called OPTIONAL_HEADER that leads us further.
+
+OPTIONAL_HEADER contains DataDirectory, an array of structures. One of these structures is the Import Directory, getting us closer to the IAT.
+
+The Import Directory is an array of IMAGE_IMPORT_DESCRIPTOR structures, each corresponding to a specific module that the PE file imports functions from. Each IMAGE_IMPORT_DESCRIPTOR structure thus forms a gateway to the functions that the PE file imports from one particular module.
+
+Inside each IMAGE_IMPORT_DESCRIPTOR, there are two crucial members: OriginalFirstThunk and FirstThunk. Both of these lead to separate yet related arrays of IMAGE_THUNK_DATA structures.
+
+OriginalFirstThunk directs us to the Import Name Table (INT), an array revealing the names of the functions that the PE file imports from the associated module. Each entry in the INT is a pointer to an IMAGE_IMPORT_BY_NAME structure, which contains the function name.
+
+Simultaneously, FirstThunk points to another array of IMAGE_THUNK_DATA structures, representing the Import Address Table (IAT) specifically for that module. Each entry in this IAT gives the actual memory address for the corresponding imported function within the module's context.
+
+So, for each module the PE file imports functions from, the OriginalFirstThunk (or INT) provides the function names, while the FirstThunk (or module-specific IAT) maps these names to their actual execution points in memory.
+
+The IAT of the PE file, or the 'main' IAT, is a compilation of these function addresses from each imported module's IAT. Each entry in the main IAT corresponds to an imported function from an external module that the PE file depends on.
+
+It's crucial to distinguish between the IAT of the PE file and the IAT of the modules it imports. The IAT of the PE file contains addresses of the functions that the PE file itself imports from each dependent module. On the other hand, the IAT of an individual module, obtained by traversing the IMAGE_THUNK_DATA structures, contains the addresses of functions that the PE file imports specifically from that module.
+
+In summary, understanding the IAT involves navigating through a web of interconnected structures within the PE file, with each layer bringing us closer to the function addresses that the PE file needs to execute its operations.
+
+
 Notes on API hooking
 
 In this example, I will be attempting to hook the `fwrite` function which is located in the `msvcrt.dll` module. To do this, I will be using the DLL injector described above and equipping it with a DllMain (which gets called automatically by LoadLibraryA) to modify the IAT (import address table) of `msvcrt.dll`. Specifically, I will need to locate the address in the IAT that points to `fwrite` and replace this address with the address of my hook function. The hook function will then receive the arguments which were intended for `fwrite`. 
