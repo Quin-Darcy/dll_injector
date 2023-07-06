@@ -14,7 +14,9 @@ use winapi::um::winnt::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_IMPORT_DESCRIP
 #[derive(Debug)]
 enum ParseError {
     GetModuleNameError(std::str::Utf8Error),
+    GetFuncNameError(std::str::Utf8Error),
     ModuleNotFoundError,
+    FunctionNotFoundError,
     UnknownError(winapi::shared::minwindef::DWORD),
 }
 
@@ -22,7 +24,9 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ParseError::GetModuleNameError(ref e) => write!(f, "Unable to get module name: {}", e),
+            ParseError::GetFuncNameError(ref e) => write!(f, "Unable to get function name: {}", e),
             ParseError::ModuleNotFoundError => write!(f, "Module not found"),
+            ParseError::FunctionNotFoundError => write!(f, "Function not found"),
             ParseError::UnknownError(e) => write!(f, "Unknown error occurred: {}", e),
         }
     }
@@ -31,21 +35,16 @@ impl fmt::Display for ParseError {
 
 #[cfg(target_os = "windows")]
 #[no_mangle]
-pub extern "system" fn DllMain(_hinst_dll: usize, _fdw_reason: u32, _: usize) -> bool {
-    // This is the name of the DLL which contains the function we want to hook
-    // followed by the name of the function itself
-    let target_module_name: &str = "msvcrt.dll";
-    let target_function_name: &str = "fwrite";
-
-    // The following function will test if the target module has been loaded
-    // If it has, it will perform the hook. Otherwisem, it will hook LoadLibraryA
-    perform_hook_if_module_loaded(target_module_name);
-
+pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> bool {
+    if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
+        let target_module_name: &str = "msvcrt.dll";
+        let target_function_name: &str = "fwrite";
+        begin_hooking(target_module_name, target_function_name);
+    }
     true
 }
 
-
-fn perform_hook_if_module_loaded(target_module_name: &str) {
+fn begin_hooking(target_module_name: &str, target_function_name: &str) {
     // This will store the base address of the currently running EXE
     // That is, the process which this DLL has been injected into
     let exe_base_addr: usize = match get_exe_base_address() {
@@ -76,23 +75,33 @@ fn perform_hook_if_module_loaded(target_module_name: &str) {
         // This array is often called the Import Address Table (IAT) and is used to
         // store the addresses of the imported functions. Which is exactly what we need
 
-        // This function will use the import directory address to locate the IAT
-        let iat_addr: usize = match locate_iat(import_directory_addr, exe_base_addr, target_module_name) {
-            Ok(addr) => {
-                addr
+        // This function will use the import directory address to locate the IAT of the target module
+        let iat_int_addrs: (usize, usize) = match locate_iat_and_int(import_directory_addr, exe_base_addr, target_module_name) {
+            Ok(addrs) => {
+                addrs
             },
             Err(e) => { 
-                test_msgbox("Failed to locate IAT", format!("{}", e).as_str());
-                panic!("Failed to locate IAT: {}", e) 
+                test_msgbox("Failed to locate IAT and INT", format!("{}", e).as_str());
+                panic!("Failed to locate IAT and INT: {}", e) 
             },
         };
 
-        test_msgbox("IAT Address", format!("{:X}", iat_addr).as_str());
+        let iat_addr = iat_int_addrs.0;
+        let int_addr = iat_int_addrs.1;
 
-        // Now that we have the address of the IAT, we can perform the hook
-        // by calling the perform_hook function which will return the address
-        // of the original function
-        //let original_function: usize = perform_hook(iat_addr);
+        // Now that we have the address of the IAT, we need the address of the target function
+        let target_func_addr: usize = match get_func_address_in_iat(iat_addr, int_addr, target_function_name) {
+            Ok(addr) => {
+                addr
+            },
+            Err(e) => {
+                test_msgbox("Failed to get function address", format!("{}", e).as_str());
+                panic!("Failed to get function address: {}", e)
+            },
+        };
+
+        // ----- perform the actual hooking here -----
+
     }
 }
 
@@ -151,13 +160,13 @@ fn get_import_directory_addr(base_addr: usize) -> usize {
 // which is a pointer to an array of IMAGE_THUNK_DATA structures. This array is often called the Import Name Table (INT)
 // and is used to store the names of the imported functions. Once the target module is found, the FirstThunk member
 // is used to get the address of the IAT
-fn locate_iat(import_directory_addr: usize, exe_base_addr: usize, target_module: &str) -> Result<usize, ParseError> {
+fn locate_iat_and_int(import_directory_addr: usize, exe_base_addr: usize, target_module: &str) -> Result<(usize, usize), ParseError> {
     let mut import_descriptor: *mut IMAGE_IMPORT_DESCRIPTOR = import_directory_addr as *mut IMAGE_IMPORT_DESCRIPTOR;
+    // The Name member of the IMAGE_IMPORT_DESCRIPTOR structure stores an RVA to the name of the imported module
+    // relative to the base address of the EXE. We can get the address of the module name by adding the RVA to the
+    // base address
     unsafe {  
         while *(*import_descriptor).u.OriginalFirstThunk_mut() != 0 { 
-            // The Name member of the IMAGE_IMPORT_DESCRIPTOR structure stores an RVA to the name of the imported module
-            // relative to the base address of the EXE. We can get the address of the module name by adding the RVA to the
-            // base address
             let module_name_rva = (*import_descriptor).Name;
             let module_name_va = (exe_base_addr as isize + module_name_rva as isize) as *const u8;
             let module_name_ptr = module_name_va as *const u8;
@@ -168,9 +177,11 @@ fn locate_iat(import_directory_addr: usize, exe_base_addr: usize, target_module:
                 Err(e) => return Err(ParseError::GetModuleNameError(e)),
             };
     
-            // If the module name matches the target module, we can return the address of the IAT
+            // If the module name matches the target module, we return the addresses of both the IAT and the INT
             if module_name_str == target_module {
-                return Ok((exe_base_addr  + (*import_descriptor).FirstThunk as usize) as usize);
+                let iat_addr = (exe_base_addr  + (*import_descriptor).FirstThunk as usize) as usize;
+                let int_addr = (exe_base_addr  + *(*import_descriptor).u.OriginalFirstThunk_mut() as usize) as usize;
+                return Ok((iat_addr, int_addr));
             }
     
             import_descriptor = import_descriptor.offset(1);
@@ -181,6 +192,37 @@ fn locate_iat(import_directory_addr: usize, exe_base_addr: usize, target_module:
 }
 
 
+
+fn get_func_address_in_iat(int_addr: usize, iat_addr: usize, target_function: &str) -> Result<usize, ParseError> {
+    // Cast the addresses as mutable pointers to usize
+    let mut int_ptr = int_addr as *mut usize;
+    let mut iat_ptr = iat_addr as *mut usize;
+
+    unsafe {
+        // Iterate over the INT and IAT together
+        while *int_ptr != 0 {
+            // The IMAGE_IMPORT_BY_NAME structure has two members: Hint and Name.
+            // Name is a null-terminated array of i8 that holds the name of the function.
+            let import_by_name = *int_ptr as *mut winapi::um::winnt::IMAGE_IMPORT_BY_NAME;
+            let func_name_c = CStr::from_ptr((*import_by_name).Name.as_ptr());
+            
+            let func_name_str = func_name_c.to_string_lossy();
+
+            test_msgbox("Function name: {}", &func_name_str);
+
+            // If the function name matches the target function, return the corresponding address from the IAT
+            if func_name_str == target_function {
+                return Ok(*iat_ptr);
+            }
+
+            // If this isn't the function we're looking for, increment the pointers to the next entries in the INT and IAT
+            int_ptr = int_ptr.offset(1);
+            iat_ptr = iat_ptr.offset(1);
+        }
+    }
+
+    Err(ParseError::FunctionNotFoundError)
+}
 
 
 // Placeholder function
@@ -199,18 +241,6 @@ fn hook_function(arg: usize, ) -> usize {
     0 // Placeholder return
 }
 
-fn hook_loadlib() {
-    // Hook LoadLibraryA
-}
-
-fn loadlib_hook_function(module_name: &str) {
-    // Let the original function do its thing
-
-    // Check if the loaded module is the one we're interested in
-    if module_name == "msvcrt.dll" {
-        perform_hook_if_module_loaded(module_name);
-    }
-}
 
 
 
