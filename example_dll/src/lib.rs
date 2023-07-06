@@ -14,20 +14,20 @@ use winapi::um::winnt::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_IMPORT_DESCRIP
 #[derive(Debug)]
 enum ParseError {
     GetModuleNameError(std::str::Utf8Error),
-    GetFuncNameError(std::str::Utf8Error),
+    _GetFuncNameError(std::str::Utf8Error),
     ModuleNotFoundError,
     FunctionNotFoundError,
-    UnknownError(winapi::shared::minwindef::DWORD),
+    _UnknownError(winapi::shared::minwindef::DWORD),
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match *self {
             ParseError::GetModuleNameError(ref e) => write!(f, "Unable to get module name: {}", e),
-            ParseError::GetFuncNameError(ref e) => write!(f, "Unable to get function name: {}", e),
+            ParseError::_GetFuncNameError(ref e) => write!(f, "Unable to get function name: {}", e),
             ParseError::ModuleNotFoundError => write!(f, "Module not found"),
             ParseError::FunctionNotFoundError => write!(f, "Function not found"),
-            ParseError::UnknownError(e) => write!(f, "Unknown error occurred: {}", e),
+            ParseError::_UnknownError(e) => write!(f, "Unknown error occurred: {}", e),
         }
     }
 }
@@ -90,7 +90,7 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str) {
         let int_addr = iat_int_addrs.1;
 
         // Now that we have the address of the IAT, we need the address of the target function
-        let target_func_addr: usize = match get_func_address_in_iat(iat_addr, int_addr, target_function_name) {
+        let _target_func_addr: usize = match get_func_address_in_iat(iat_addr, int_addr, target_function_name) {
             Ok(addr) => {
                 addr
             },
@@ -101,7 +101,6 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str) {
         };
 
         // ----- perform the actual hooking here -----
-
     }
 }
 
@@ -179,6 +178,7 @@ fn locate_iat_and_int(import_directory_addr: usize, exe_base_addr: usize, target
     
             // If the module name matches the target module, we return the addresses of both the IAT and the INT
             if module_name_str == target_module {
+                test_msgbox("Found target module: ", module_name_str);
                 let iat_addr = (exe_base_addr  + (*import_descriptor).FirstThunk as usize) as usize;
                 let int_addr = (exe_base_addr  + *(*import_descriptor).u.OriginalFirstThunk_mut() as usize) as usize;
                 return Ok((iat_addr, int_addr));
@@ -226,18 +226,14 @@ fn get_func_address_in_iat(int_addr: usize, iat_addr: usize, target_function: &s
 
 
 // Placeholder function
-fn perform_hook(iat: usize) -> usize {
+fn _perform_hook(_iat: usize) -> usize {
     // Hook the function and return the address of the original function
     0 // Placeholder return
 }
 
-fn hook_function(arg: usize, ) -> usize {
+fn _hook_function(_arg: usize, ) -> usize {
     // Perform the process on arg
-
-    // Retrieve the address of the original function
-
     // Call the original function
-    // original_function(arg)
     0 // Placeholder return
 }
 
