@@ -32,13 +32,12 @@ impl fmt::Display for ParseError {
     }
 }
 
-
 #[cfg(target_os = "windows")]
 #[no_mangle]
 pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> bool {
     if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
-        let target_module_name: &str = "msvcrt.dll";
-        let target_function_name: &str = "fwrite";
+        let target_module_name: &str = "USER32.dll";
+        let target_function_name: &str = "MessageBoxA";
         begin_hooking(target_module_name, target_function_name);
     }
     true
@@ -86,11 +85,12 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str) {
             },
         };
 
-        let iat_addr = iat_int_addrs.0;
-        let int_addr = iat_int_addrs.1;
+        // Store the addresses of the INT and IAT
+        let int_addr = iat_int_addrs.0;
+        let iat_addr = iat_int_addrs.1;
 
-        // Now that we have the address of the IAT, we need the address of the target function
-        let _target_func_addr: usize = match get_func_address_in_iat(iat_addr, int_addr, target_function_name) {
+        // Now that we have the address of the INT and IAT, we need the address of the target function
+        let target_func_addr: usize = match get_func_address_in_iat(int_addr, iat_addr, exe_base_addr, target_function_name) {
             Ok(addr) => {
                 addr
             },
@@ -99,6 +99,8 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str) {
                 panic!("Failed to get function address: {}", e)
             },
         };
+
+        test_msgbox("Target function address: 0x", format!("{:X}", target_func_addr).as_str());
 
         // ----- perform the actual hooking here -----
     }
@@ -165,7 +167,7 @@ fn locate_iat_and_int(import_directory_addr: usize, exe_base_addr: usize, target
     // relative to the base address of the EXE. We can get the address of the module name by adding the RVA to the
     // base address
     unsafe {  
-        while *(*import_descriptor).u.OriginalFirstThunk_mut() != 0 { 
+        while (*import_descriptor).FirstThunk != 0 {
             let module_name_rva = (*import_descriptor).Name;
             let module_name_va = (exe_base_addr as isize + module_name_rva as isize) as *const u8;
             let module_name_ptr = module_name_va as *const u8;
@@ -181,7 +183,7 @@ fn locate_iat_and_int(import_directory_addr: usize, exe_base_addr: usize, target
                 test_msgbox("Found target module: ", module_name_str);
                 let iat_addr = (exe_base_addr  + (*import_descriptor).FirstThunk as usize) as usize;
                 let int_addr = (exe_base_addr  + *(*import_descriptor).u.OriginalFirstThunk_mut() as usize) as usize;
-                return Ok((iat_addr, int_addr));
+                return Ok((int_addr, iat_addr));
             }
     
             import_descriptor = import_descriptor.offset(1);
@@ -191,28 +193,38 @@ fn locate_iat_and_int(import_directory_addr: usize, exe_base_addr: usize, target
     Err(ParseError::ModuleNotFoundError)
 }
 
-
-
-fn get_func_address_in_iat(int_addr: usize, iat_addr: usize, target_function: &str) -> Result<usize, ParseError> {
-    // Cast the addresses as mutable pointers to usize
+// Function to get the address of a specific function in the Import Address Table (IAT) 
+fn get_func_address_in_iat(int_addr: usize, iat_addr: usize, exe_base_addr: usize, target_function: &str) -> Result<usize, ParseError> {
+    // Cast the addresses as mutable pointers to usize. These pointers are referring to the Import Name Table (INT) and Import Address Table (IAT).
     let mut int_ptr = int_addr as *mut usize;
     let mut iat_ptr = iat_addr as *mut usize;
 
     unsafe {
         // Iterate over the INT and IAT together
         while *int_ptr != 0 {
-            // The IMAGE_IMPORT_BY_NAME structure has two members: Hint and Name.
-            // Name is a null-terminated array of i8 that holds the name of the function.
-            let import_by_name = *int_ptr as *mut winapi::um::winnt::IMAGE_IMPORT_BY_NAME;
-            let func_name_c = CStr::from_ptr((*import_by_name).Name.as_ptr());
-            
-            let func_name_str = func_name_c.to_string_lossy();
+            // Check if the entry is imported by name or ordinal. If the highest bit is set, the function is imported by ordinal.
+            if *int_ptr & 0x80000000 == 0 {
+                // When the entry is imported by name, the value at the INT pointer is a Relative Virtual Address (RVA). This RVA points to an 
+                // IMAGE_IMPORT_BY_NAME structure that contains the name of the function.
+                let import_by_name_rva = *int_ptr;
 
-            test_msgbox("Function name: {}", &func_name_str);
+                // Convert the RVA to a Virtual Address (VA) by adding it to the base address of the executable. Cast the result to a pointer to the
+                // IMAGE_IMPORT_BY_NAME structure.
+                let import_by_name_va = (exe_base_addr as isize + import_by_name_rva as isize) as *mut winapi::um::winnt::IMAGE_IMPORT_BY_NAME;
 
-            // If the function name matches the target function, return the corresponding address from the IAT
-            if func_name_str == target_function {
-                return Ok(*iat_ptr);
+                // The Name member of the IMAGE_IMPORT_BY_NAME structure is a pointer to a null-terminated string. This string is the name of the imported function.
+                let func_name_c = CStr::from_ptr((*import_by_name_va).Name.as_ptr());
+                let func_name_str = func_name_c.to_string_lossy();
+
+                test_msgbox("Function imported by name: ", &func_name_str);
+
+                // If the function name matches the target function, return the corresponding address from the IAT. This address is where the application
+                // will jump to when the imported function is called.
+                if func_name_str == target_function {
+                    return Ok(*iat_ptr);
+                }
+            } else {
+                test_msgbox("Function imported by ordinal, skipping.", "");
             }
 
             // If this isn't the function we're looking for, increment the pointers to the next entries in the INT and IAT
@@ -221,9 +233,9 @@ fn get_func_address_in_iat(int_addr: usize, iat_addr: usize, target_function: &s
         }
     }
 
+    // If we've checked all entries in the INT and IAT and haven't found the target function, return an error.
     Err(ParseError::FunctionNotFoundError)
 }
-
 
 // Placeholder function
 fn _perform_hook(_iat: usize) -> usize {
