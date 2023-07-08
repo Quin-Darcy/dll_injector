@@ -179,6 +179,8 @@
 
     There's our boy! Look at him all snuggled up in that address space ... awwwww!
 
+6. **Remote Thread Creation and DLL Loading**
+
     Earlier we mentioned that we would be using the function `LoadLibraryA` to load our DLL into the target process. BUT! `LoadLibraryA` is a function within `kernel32.dll` and this module is loaded into every Windows process ... at some point. Recall that our target process was immediately put into a suspended state when it was created so there is a chance that `kernel32.dll` has not been loaded yet. If its not there, then we cannot reference `LoadLibraryA`. Let's check to see if it has been loaded:
 
     ![dll_pre_kernel32](./assets/dll_pre_kernel32.PNG)
@@ -419,3 +421,13 @@
     After
 
     ![dll_post_inject](./assets/target_post_dll_inect.PNG)
+
+7. **Import Directory Address Location**
+
+    There is something quite special about loading a DLL with `LoadLibraryA`. If your DLL has a `DllMain`, then it will automatically get called during the loading process. And that is where we find ourselves, presently. We have successfully loaded our DLL which means we now turn our attention away from the injector and onto the DLL itself. 
+
+    The key to any good API hook is a delicious vinegrette and the address of your target function. However, the target function address will not be the most straight forward thing to obtain. It will require us to navigate into several nested structures. Take a look at the following (mostly) accruate diagram:
+
+    ![int_diagram](./assets/IAT_INT.svg)
+
+    
