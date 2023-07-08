@@ -420,7 +420,7 @@
 
     After
 
-    ![dll_post_inject](./assets/target_post_dll_inect.PNG)
+    ![dll_post_inject](./assets/dll_list_post_inject.PNG)
 
     And here you can see the start of the DLL
 
