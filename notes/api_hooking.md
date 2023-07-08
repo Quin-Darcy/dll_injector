@@ -422,12 +422,163 @@
 
     ![dll_post_inject](./assets/target_post_dll_inect.PNG)
 
+    And here you can see the start of the DLL
+
+    ![cpu_dll_post_inject](./assets/cpu_dll_injected.PNG)
+
 7. **Import Directory Address Location**
 
     There is something quite special about loading a DLL with `LoadLibraryA`. If your DLL has a `DllMain`, then it will automatically get called during the loading process. And that is where we find ourselves, presently. We have successfully loaded our DLL which means we now turn our attention away from the injector and onto the DLL itself. 
 
-    The key to any good API hook is a delicious vinegrette and the address of your target function. However, the target function address will not be the most straight forward thing to obtain. It will require us to navigate into several nested structures. Take a look at the following (mostly) accruate diagram:
+    `DllMain` need not be too complicated. In fact, it is used here as just the central caller for all the other steps. You will also notice the argument `fwd_reason`. This is a value that is passed into `DllMain` which is essentially *why* its being called. So its either being called because the receiving DLL is being attached to a new process, detached, or something else. What we are doing here is conditionally executing the call to `begin_hooking` if the reason we received is `PROCESS_ATTACH`. This makes it so the code only runs when the DLL first gets loaded. 
+
+    ```Rust
+        pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> bool {
+            if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
+                let target_module_name: &str = "USER32.dll";
+                let target_function_name: &str = "MessageBoxA";
+                begin_hooking(target_module_name, target_function_name);
+            }
+            true
+        }
+    ```
+
+    The key to any good API hook is a delicious vinegrette and the address of your target function. However, the target function address will not be the most straight forward thing to obtain. It will require us to navigate into several nested structures. The first of these being the Import Directory. The Import Directory is an array of `IMAGE_IMPORT_DESCRIPTOR` structures, each corresponding to a specific module that the PE file imports functions from. Each `IMAGE_IMPORT_DESCRIPTOR` structure thus forms a gateway to the functions that the PE file imports from one particular module.
 
     ![int_diagram](./assets/IAT_INT.svg)
 
-    
+    As you can see, there are a few steps involved in getting to the Import Directory. However, the code is pretty straigt forward and is really just pointer chasing as you can see here:
+
+    ```Rust
+        // This function will return the address of the Import Directory of the EXE
+        fn get_import_directory_addr(base_addr: usize) -> usize {
+            unsafe {
+                // The base address is set to a pointer to an IMAGE_DOS_HEADER structure 
+                let dos_header = base_addr as *const IMAGE_DOS_HEADER;
+
+                // The first 64 bytes of the PE file is the IMAGE_DOS_HEADER structure
+                // which has a member called e_lfanew which is the offset to the PE header
+                let pe_header = base_addr + (*dos_header).e_lfanew as usize;
+
+                // The PE header is set as a pointer to an IMAGE_NT_HEADERS structure
+                let nt_headers = pe_header as *const IMAGE_NT_HEADERS;
+
+                // The Optional Header is a member of the IMAGE_NT_HEADERS structure
+                let optional_header = &(*nt_headers).OptionalHeader;
+
+                // The Import Directory is one of the data directories in the Optional Header
+                let import_directory = &optional_header.DataDirectory[winapi::um::winnt::IMAGE_DIRECTORY_ENTRY_IMPORT as usize];
+
+                // The address of the Import Directory is its relative virtual address (RVA) added to the base address
+                let import_directory_addr = base_addr + import_directory.VirtualAddress as usize;
+
+                import_directory_addr
+            }
+        }
+    ```
+
+    ![import_dir_addr](./assets/import_dir_addr_msgbox.PNG)
+
+    With the address of the Import Directory in hand, we can now start to zero-in on the function we want to hook. To do this, we first need to find the module which contains our target function. This is something you will need to know before hand. In our example, we are trying to hook `MessageBoxA` and this is a function within `USER32.dll`. Thus, if the Import Directory is an array of IMAGE_IMPORT_DESCRIPTORs and each IMAGE_IMPORT_DESCRIPTOR corresponds to one of the modules which are target process imports functions from, then we need to find the specific `IMAGE_IMPORT_DESCRIPTOR` that corresponds with `USER32.dll`.
+
+    Luckily for us, each `IMAGE_IMPORT_DESCRIPTOR` struct has a `Name` member which contains the name of the module it corresponds to. This means we just iterate throught the structs in the Import Directory and check each one's `Name` field against `"USER32.dll"`. 
+
+    Once we find the `IMAGE_IMPORT_DESCRIPTOR` that corresponds to `USER32.dll`, we will be interested in two things: `OriginalFirstThunk` and `FirstThunk`. These are two members of the `IMAGE_IMPORT_DESCRIPTOR` struct. 
+
+    * `OriginalFirstThunk`:  This is an array of `IMAGE_IMPORT_BY_NAME` structs, each of which contain the actual name of a function which the target process imports from the target module. So given that our target process imports `MessageBoxA` from `USER32.dll`, then there is an `IMAGE_IMPORT_DESCRIPTOR` that corresponds with `USER32.dll` and that struct contains an array of `IMAGE_IMPORT_BY_NAME` structs, one of which corresponds to `MessageBoxA`. This array if often call the Import Name Table (IAT).
+    * `FirstThunk`: This goes hand in hand with `OriginalFirstThunk` in that it is an array of address, each of which points to a function whose name is in one of the `IMPORT_BY_NAME` structs. This array is called the Import Address Table (IAT). So if there is an `IMPORT_BY_NAME` struct for `MessageBoxA`, there is an address in `FirstThunk` that points to the actual function, `MessageBoxA`. 
+
+    Now that we have this cleared up, let's first look at how we get the addresses of the INT and IAT of the target module, `USER32.dll`:
+
+    ```Rust
+        // This function iterates through the IMAGE_IMPORT_DESCRIPTOR structures by looking at the OriginalFirstThunk member
+        // which is a pointer to an array of IMAGE_THUNK_DATA structures. This array is often called the Import Name Table (INT)
+        // and is used to store the names of the imported functions. Once the target module is found, the FirstThunk member
+        // is used to get the address of the IAT
+        fn locate_iat_and_int(import_directory_addr: usize, exe_base_addr: usize, target_module: &str) -> Result<(usize, usize), ParseError> {
+            let mut import_descriptor: *mut IMAGE_IMPORT_DESCRIPTOR = import_directory_addr as *mut IMAGE_IMPORT_DESCRIPTOR;
+            // The Name member of the IMAGE_IMPORT_DESCRIPTOR structure stores an RVA to the name of the imported module
+            // relative to the base address of the EXE. We can get the address of the module name by adding the RVA to the
+            // base address
+            unsafe {  
+                while (*import_descriptor).FirstThunk != 0 {
+                    let module_name_rva = (*import_descriptor).Name;
+                    let module_name_va = (exe_base_addr as isize + module_name_rva as isize) as *const u8;
+                    let module_name_ptr = module_name_va as *const u8;
+                    let module_name_c = CStr::from_ptr(module_name_ptr as *const i8);
+
+                    let module_name_str = match module_name_c.to_str() {
+                        Ok(name) => name,
+                        Err(e) => return Err(ParseError::GetModuleNameError(e)),
+                    };
+            
+                    // If the module name matches the target module, we return the addresses of both the IAT and the INT
+                    if module_name_str == target_module {
+                        test_msgbox("Found target module: ", module_name_str);
+                        let iat_addr = (exe_base_addr  + (*import_descriptor).FirstThunk as usize) as usize;
+                        let int_addr = (exe_base_addr  + *(*import_descriptor).u.OriginalFirstThunk_mut() as usize) as usize;
+                        return Ok((int_addr, iat_addr));
+                    }
+            
+                    import_descriptor = import_descriptor.offset(1);
+                }
+            }
+
+            Err(ParseError::ModuleNotFoundError)
+        }
+    ```
+
+    ![iat_int](./assets/msgbox_iat_addr.PNG)
+
+    Nice! We have the addresses of the IAT and the INT for `USER32.dll`. We must now iterate through the `IMAGE_IMPORT_BY_NAME` structs and find the one which corresponds to `MessageBoxA`. Since there is a one-to-one correspondance between the `IMAGE_IMPORT_BY_NAME` structs in the INT and the function pointer addresses in the IAT, we can iterate though both simulataneously. Checking the name in each `IMAGE_IMPORT_BY_NAME` struct until we find `MessageBoxA`, then we just return the function pointer we are on at that point in the iteration.
+
+    ```Rust
+        // Function to get the address of a specific function in the Import Address Table (IAT) 
+        fn get_func_address_in_iat(int_addr: usize, iat_addr: usize, exe_base_addr: usize, target_function: &str) -> Result<usize, ParseError> {
+            // Cast the addresses as mutable pointers to usize. These pointers are referring to the Import Name Table (INT) and Import Address Table (IAT).
+            let mut int_ptr = int_addr as *mut usize;
+            let mut iat_ptr = iat_addr as *mut usize;
+
+            unsafe {
+                // Iterate over the INT and IAT together
+                while *int_ptr != 0 {
+                    // Check if the entry is imported by name or ordinal. If the highest bit is set, the function is imported by ordinal.
+                    if *int_ptr & 0x80000000 == 0 {
+                        // When the entry is imported by name, the value at the INT pointer is a Relative Virtual Address (RVA). This RVA points to an 
+                        // IMAGE_IMPORT_BY_NAME structure that contains the name of the function.
+                        let import_by_name_rva = *int_ptr;
+
+                        // Convert the RVA to a Virtual Address (VA) by adding it to the base address of the executable. Cast the result to a pointer to the
+                        // IMAGE_IMPORT_BY_NAME structure.
+                        let import_by_name_va = (exe_base_addr as isize + import_by_name_rva as isize) as *mut winapi::um::winnt::IMAGE_IMPORT_BY_NAME;
+
+                        // The Name member of the IMAGE_IMPORT_BY_NAME structure is a pointer to a null-terminated string. This string is the name of the imported function.
+                        let func_name_c = CStr::from_ptr((*import_by_name_va).Name.as_ptr());
+                        let func_name_str = func_name_c.to_string_lossy();
+
+                        test_msgbox("Function imported by name: ", &func_name_str);
+
+                        // If the function name matches the target function, return the corresponding address from the IAT. This address is where the application
+                        // will jump to when the imported function is called.
+                        if func_name_str == target_function {
+                            return Ok(*iat_ptr);
+                        }
+                    } else {
+                        test_msgbox("Function imported by ordinal, skipping.", "");
+                    }
+
+                    // If this isn't the function we're looking for, increment the pointers to the next entries in the INT and IAT
+                    int_ptr = int_ptr.offset(1);
+                    iat_ptr = iat_ptr.offset(1);
+                }
+            }
+        }
+    ```
+
+    Running this bad boy, we get
+
+    ![target_func_addr_msgbox](./assets/target_func_addr_msgbox.PNG)
+
+    And going to this address in our debugger we can see it is actually pointing to the `MessageBoxA` function
+
+    ![target_func_cpu](./assets/cpu_target_func.PNG)
