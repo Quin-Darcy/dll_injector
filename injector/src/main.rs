@@ -90,8 +90,8 @@ fn allocate_memory(pi: PROCESS_INFORMATION, dll_path: &str) -> Result<*mut c_voi
         Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
     } else {
         println!("    Memory successfully allocated in target process!");
-        println!("        Address: {:p}", dll_path_ptr);
-        println!("        Size: {}\n", dll_path_c.as_bytes_with_nul().len());
+        println!("        Memory allocated at address: {:p}", dll_path_ptr);
+        println!("        Memory allocated: {} bytes\n", dll_path_c.as_bytes_with_nul().len());
         Ok(dll_path_ptr)
     }
 }

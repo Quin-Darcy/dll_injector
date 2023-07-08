@@ -6,7 +6,7 @@ use std::error::Error;
 
 
 fn main() {
-    let target_exe = "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\file_writer.exe";
+    let target_exe = "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\target.exe";
     let dll32 = "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll32.dll";
     let dll64 = "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll64.dll";
     
@@ -14,12 +14,12 @@ fn main() {
     
     if is_64bit {
         Command::new("cmd")
-            .args(&["/C", "start", "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\target\\x86_64-pc-windows-msvc\\debug\\dll_injector.exe", target_exe, dll64])
+            .args(&["/C", "start", "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\target\\x86_64-pc-windows-msvc\\debug\\injector.exe", target_exe, dll64])
             .spawn()
             .expect("failed to start 64 bit injector");
     } else {
         Command::new("cmd")
-            .args(&["/C", "start", "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\target\\i686-pc-windows-msvc\\debug\\dll_injector.exe", target_exe, dll32])
+            .args(&["/C", "start", "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\target\\i686-pc-windows-msvc\\debug\\injector.exe", target_exe, dll32])
             .spawn()
             .expect("failed to start 32 bit injector");
     }
