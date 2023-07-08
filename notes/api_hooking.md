@@ -178,3 +178,244 @@
     ![dump_post_mem_write](./assets/dump_post_mem_write.PNG)
 
     There's our boy! Look at him all snuggled up in that address space ... awwwww!
+
+    Earlier we mentioned that we would be using the function `LoadLibraryA` to load our DLL into the target process. BUT! `LoadLibraryA` is a function within `kernel32.dll` and this module is loaded into every Windows process ... at some point. Recall that our target process was immediately put into a suspended state when it was created so there is a chance that `kernel32.dll` has not been loaded yet. If its not there, then we cannot reference `LoadLibraryA`. Let's check to see if it has been loaded:
+
+    ![dll_pre_kernel32](./assets/dll_pre_kernel32.PNG)
+
+    Dang! Its not there. But do not fret, child, for we can simply wait until it is. What we can do is perform a loop where we unsuspend the target process for a very brief amount of time to give it a chance to load the module, suspend the process again, then check if its there. The following two functions accomplish this:
+
+    ```Rust
+        // This function will use the EnumProcessModulesEx function populate a vector with the
+        // handles of all the modules loaded by the target process. It then iterates through
+        // the vector and checks the name of each module against the name of the module we are
+        // looking for. If the module is found, the function returns the handle of the module.
+        // If the module is not found, the function returns an error code.
+        fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
+            // cb_needed is the number of bytes required to store all the module handles
+            let mut cb_needed: DWORD = 0;
+
+            // This first call to EnumProcessModulesEx will set cb_needed to the correct value
+            let result = unsafe {
+                EnumProcessModulesEx(
+                    process_handle,
+                    std::ptr::null_mut(),
+                    0,
+                    &mut cb_needed,
+                    LIST_MODULES_ALL,
+                )
+            };
+
+            if result == 0 {
+                return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+            }
+
+            // Calculate the number of modules loaded by the target process by dividing
+            // the number of bytes needed by the size of a module handle
+            let module_count = cb_needed / std::mem::size_of::<HMODULE>() as DWORD;
+
+            // Create a vector to store the module handles
+            let mut h_mods: Vec<HMODULE> = vec![std::ptr::null_mut(); module_count as usize];
+
+            // This second call to EnumProcessModulesEx will populate the vector with the module handles
+            let result = unsafe {
+                EnumProcessModulesEx(
+                    process_handle,
+                    h_mods.as_mut_ptr(),
+                    cb_needed,
+                    &mut cb_needed,
+                    LIST_MODULES_ALL,
+                )
+            };
+
+            if result == 0 {
+                return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+            }
+
+            // Create a buffer to store the name of each module
+            let mut module_name = vec![0u8; 256];
+
+            // Iterate through the vector of module handles and check the name of each module
+            // If the name matches the name of the module we are looking for, return the handle
+            for i in 0..module_count {
+                let result = unsafe {
+                    GetModuleBaseNameA(
+                        process_handle,
+                        h_mods[i as usize],
+                        module_name.as_mut_ptr() as LPSTR,
+                        256 as DWORD,
+                    )
+                };
+
+                if result == 0 {
+                    return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+                }
+
+                let name = unsafe { CStr::from_ptr(module_name.as_ptr() as LPCSTR) }.to_string_lossy().into_owned();
+
+                if name.eq_ignore_ascii_case("kernel32.dll") {
+                    return Ok(h_mods[i as usize]);
+                }
+            }
+
+            Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
+        }
+
+        // This is the main loop for checking if kernel32.dll has been loaded by the target process
+        fn suspend_and_check_kernel32(process_info: PROCESS_INFORMATION) -> Result<HMODULE, DWORD> {
+            println!("Checking if kernel32.dll has been loaded...");
+
+            // Check if kernel32.dll has been loaded by the target process
+            // If it hasn't, then the function will return an error code
+            let mut kernel32_base_addr = check_if_kernel32_loaded(process_info.hProcess);
+
+            // If an error code is returned, then we need to unsuspend the target process to give
+            // it a chance to load kernel32.dll. We then suspend the target process again and
+            // check if kernel32.dll has been loaded. We repeat this process until kernel32.dll
+            // has been loaded by the target process.
+            while kernel32_base_addr.is_err() {
+                // Unsuspend the target process
+                let resume_result: DWORD = unsafe { ResumeThread(process_info.hThread) };
+
+                if resume_result == DWORD::MAX {
+                    return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+                }
+
+                // Sleep for 1 millisecond to give the target process a chance to load kernel32.dll
+                std::thread::sleep(std::time::Duration::from_millis(1));
+                
+                // Suspend the target process again
+                let suspend_result: DWORD = unsafe { SuspendThread(process_info.hThread) };
+
+                if suspend_result == DWORD::MAX {
+                    return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+                }
+
+                // Check if kernel32.dll has been loaded by the target process
+                kernel32_base_addr = check_if_kernel32_loaded(process_info.hProcess);
+            }
+
+            println!("    kernel32.dll has been loaded into target process!");
+            println!("        Base address: 0x{:x}\n", kernel32_base_addr.unwrap() as usize);
+            kernel32_base_addr
+        }
+    ```
+
+    After the above loop does its thing, the target process is put back into a suspended state and we can verify `kernel32.dll` is now loaded in our target process by checking those DLLs again:
+
+    ![dll_post_kernel32](./assets/dll_post_kernel32.PNG)
+
+    Okay, sweet we have `kernel32.dll` and now we can call `LoadLibraryA`. NOT SO FAST FUCKFACE! *Where* exactly is `LoadLibraryA`?? If you don't know that, you can't reference it. Well let's take stock of what we have and see if we can determine where the function is: We have our calling (injector) process and our target process. The injector process, like all Windows processes has `kernel32.dll` already loaded (we never suspended it), so this means we can get the base address of this module. Moreover, with the help of a little function called `GetProcAddress`, we can get the Relative Virtual Address (RVA) of `LoadLibraryA` relative to this base address. 
+    
+    So then if we simply subtract the module's base address from the RVA, we will get the offset. The offset is the number of bytes which seperate the base address of the module from one of its functions. This is an unchanging value. So even though we are looking at the memory layout of `kernel32.dll` in a totally different process (injector), the local distances (offsets) will be the same across different address spaces. 
+    
+    So what! So, if we have the base address of `kernel32.dll` in our target process, we then add the offset to it and bingo bango, we have the address of `LoadLibraryA` in our target process. 
+
+    The following function calculates the offset of `LoadLibraryA` from the calling process:
+
+    ```Rust
+        // This function will get the base address of the kernel32.dll module which has been 
+        // loaded by the calling process (this program) and use the GetProcAddress function
+        // to get the address (relative to the base address) of the LoadLibraryA function
+        // The function then subtracts the base address from the LoadLibraryA address to get the offset
+        fn get_loadlib_offset() -> Result<usize, DWORD> {
+            println!("Getting offset of LoadLibraryA function...");
+            let module_str = CString::new("kernel32.dll").unwrap();
+            let loadlib_str = CString::new("LoadLibraryA").unwrap();
+            let loadlib_offset: usize;
+
+            unsafe {
+                // First we need to get the kernel32.dll module handle
+                let kernel32_handle = GetModuleHandleA(module_str.as_ptr());
+
+                if kernel32_handle.is_null() {
+                    println!("    Failed to get kernel32.dll module handle!");
+                    return Err(winapi::um::errhandlingapi::GetLastError());
+                }
+
+                // Next we need to get the relative address of the LoadLibraryA function
+                // We can do this by calling the GetProcAddress function
+                let loadlib_ptr = GetProcAddress(kernel32_handle, loadlib_str.as_ptr());
+
+                if loadlib_ptr.is_null() {
+                    println!("    Failed to get address of LoadLibraryA function!");
+                    return Err(winapi::um::errhandlingapi::GetLastError());
+                }
+
+                // Calculate the offset of LoadLibraryA in kernel32.dll
+                loadlib_offset = loadlib_ptr as usize - kernel32_handle as usize;
+            }
+
+            println!("    Offset of LoadLibraryA function successfully retrieved!");
+            println!("        Offset: 0x{:x}\n", loadlib_offset);
+            Ok(loadlib_offset)
+        }
+    ```
+
+    ![cmd_loadlib_offset](./assets/cmd_loadlib_offset.PNG)
+
+    And this function uses this offset to get the address of `LoadLibraryA` within the target process
+
+    ```Rust
+        // This function will calculate the address of the LoadLibraryA function in the target process
+        // by adding the offset of the LoadLibraryA function in kernel32.dll to the base address of kernel32.dll
+        fn get_loadlib_addr(kernel32_base_addr: HMODULE, offset: usize) -> Result<*const c_void, DWORD> {
+            println!("Calculating address of LoadLibraryA function in target process...");
+            let loadlib_addr_ptr = (kernel32_base_addr as usize + offset) as *const c_void;
+            println!("    Address of LoadLibraryA function in target process successfully calculated!");
+            println!("        Address: 0x{:x}\n", loadlib_addr_ptr as usize);
+            Ok(loadlib_addr_ptr)
+        } 
+    ```
+
+    Noice. We have the address of `LoadLibraryA` in the target process. We are approaching the finish line for the first part of API hooking, the DLL injection. 
+
+    The next thing we need to do is actually *call* `LoadLibraryA` and pass it the pointer to our DLL path. Remember, this is just the address where we allocated the memory and wrote to it. How does one execute a function within a process whose thread is suspended? Just create a new thread ya' dip! 
+
+    ```Rust
+        // Now we will create a remote thread in the target process using CreateRemoteThread
+        // This thread will be responsible for loading the DLL into the target process
+        // using the LoadLibraryA function whose address we obtained above
+        // The return value is the handle to the newly created thread
+        fn create_remote_thread(process_info: PROCESS_INFORMATION, load_library: FARPROC, dll_path_ptr: LPVOID) -> Result<HANDLE, DWORD> {
+            println!("Creating remote thread in target process...");
+            let thread_id = unsafe {
+                CreateRemoteThread(
+                    process_info.hProcess,
+                    null_mut(),
+                    0,
+                    Some(std::mem::transmute(load_library)), // <-- Transmute, wtf? this is to convert it to a "proper" function pointer
+                    dll_path_ptr,  
+                    0,
+                    null_mut()
+                )
+            };
+            if thread_id.is_null() {
+                Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
+            } else {
+                println!("    Remote thread created successfully!");
+                println!("        Thread ID: {:?}\n", thread_id);
+                Ok(thread_id)
+            }
+        }
+    ```
+
+    Here, we can see our new thread in action!
+
+    Before
+
+    ![thread_pre_create](./assets/xdbg_pre_remote_thread.PNG)
+
+    After
+
+    ![thread_post_create](./assets/xdbg_post_remote_thread.PNG) 
+
+    Once this thread does its thing and runs `LoadLibraryA` to load our DLL, we can then see our DLL in the listed of loaded modules
+
+    Before
+
+    ![dll_pre_inject](./assets/target_pre_dll_inject.PNG)
+
+    After
+
+    ![dll_post_inject](./assets/target_post_dll_inect.PNG)
