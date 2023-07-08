@@ -479,6 +479,27 @@
 
     ![import_dir_addr](./assets/import_dir_addr_msgbox.PNG)
 
+8. **Target Process Base Address Aquisition**
+
+    It should be noted at this point that many of the pointers we have been dealing with and will deal with are Relative Virtual Addresses (RVA). So we need the base address of the image which we are injecting into as these RVAs are relative to that address. This means that through out the code you will see a number of instances where we are adding `exe_base_addr` and now would be a good moment to look at how this is calculated. It is nothing too special. Again, we need the base address of the image we (the DLL) have been injected into. A call to `GetModuleHandleA` with a `null` argument will return the handle (address) of the process from which the call was made. It looks something like this:
+
+    ```Rust
+        // This function will return the base address of the EXE which this DLL has been injected into
+        fn get_exe_base_address() -> Result<usize, winapi::shared::minwindef::DWORD> {
+            // We can get the base address of the EXE by passing a null value to GetModuleHandleA
+            let exe_handle = unsafe { winapi::um::libloaderapi::GetModuleHandleA(std::ptr::null()) };
+
+            // If the handle is null, the function failed
+            if exe_handle.is_null() {
+                Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
+            } else {
+                Ok(exe_handle as usize)
+            }
+        }
+    ```
+
+9. **IAT and INT Address of Target Module**
+
     With the address of the Import Directory in hand, we can now start to zero-in on the function we want to hook. To do this, we first need to find the module which contains our target function. This is something you will need to know before hand. In our example, we are trying to hook `MessageBoxA` and this is a function within `USER32.dll`. Thus, if the Import Directory is an array of IMAGE_IMPORT_DESCRIPTORs and each IMAGE_IMPORT_DESCRIPTOR corresponds to one of the modules which are target process imports functions from, then we need to find the specific `IMAGE_IMPORT_DESCRIPTOR` that corresponds with `USER32.dll`.
 
     Luckily for us, each `IMAGE_IMPORT_DESCRIPTOR` struct has a `Name` member which contains the name of the module it corresponds to. This means we just iterate throught the structs in the Import Directory and check each one's `Name` field against `"USER32.dll"`. 
@@ -529,6 +550,8 @@
     ```
 
     ![iat_int](./assets/msgbox_iat_addr.PNG)
+
+10. **Target Function Address Location**
 
     Nice! We have the addresses of the IAT and the INT for `USER32.dll`. We must now iterate through the `IMAGE_IMPORT_BY_NAME` structs and find the one which corresponds to `MessageBoxA`. Since there is a one-to-one correspondance between the `IMAGE_IMPORT_BY_NAME` structs in the INT and the function pointer addresses in the IAT, we can iterate though both simulataneously. Checking the name in each `IMAGE_IMPORT_BY_NAME` struct until we find `MessageBoxA`, then we just return the function pointer we are on at that point in the iteration.
 
@@ -582,3 +605,7 @@
     And going to this address in our debugger we can see it is actually pointing to the `MessageBoxA` function
 
     ![target_func_cpu](./assets/cpu_target_func.PNG)
+
+12. **API Hooking Machanishm**
+
+    
