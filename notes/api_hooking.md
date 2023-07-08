@@ -93,4 +93,49 @@
     ![before_createproc](./assets/pre_process_creation.PNG)
     ![after_createproc](./assets/post_process_creation.PNG)
 
-    
+    Moreover, we can show the state of the process's main thread which should be suspended given the flag we passed to `CreateProcessW`:
+
+    ![main_thread_state](./assets/suspended_main_thread.PNG)
+
+    With the target process in a suspended state, we can now pump up its address space and give it some more memory than it currently has. This will be necessary as we need to get our big ol' DLL inside there! To do this, we make we need two things: How many bytes are we allocating to the process memory, a handle to the process we are allocating to. The first value is actually a little counter-intuitive at first glance. This is because one would think we need to allocate the number of bytes equal to the size of the DLL itself, but we actually only need to allocate the number of bytes equal to the size of the path to the DLL. Why this is will become clear shortly. The second thing we need is a handle to the process we are allocating to, but this is already done because this is one of the members of the `PROCESS_INFORMATION` struct we have a pointer to in `pi`. 
+
+    With both these components in hand, we now make a call to `VirtualAllocEx`:
+
+    ```Rust
+        // Next, we will use the VirtualAllocEx function to allocate memory within the process
+        // We will need the process handle to do this, which is stored in the PROCESS_INFORMATION struct
+        // We will need the amount of memory to allocate, which is the size (in bytes) of the DLL path
+        // We will need to specify the type of memory to allocate, which is read, write, and execute
+        // We will need to specify the type of memory protection to use, which is read, write, and execute
+        // The return value is the base address of the allocated region of pages
+        fn allocate_memory(pi: PROCESS_INFORMATION, dll_path: &str) -> Result<*mut c_void, DWORD> {
+            println!("Allocating memory in target process...");
+            let dll_path_c = CString::new(dll_path).unwrap();
+            let dll_path_ptr = unsafe {
+                VirtualAllocEx(
+                    pi.hProcess,
+                    null_mut(),
+                    dll_path_c.as_bytes_with_nul().len(),  // Allocate enough space for the DLL path
+                    winapi::um::winnt::MEM_COMMIT | winapi::um::winnt::MEM_RESERVE,
+                    winapi::um::winnt::PAGE_READWRITE,
+                )
+            };
+
+            if dll_path_ptr.is_null() {
+                Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
+            } else {
+                println!("    Memory successfully allocated in target process!");
+                println!("        Memory allocated at address: {:p}", dll_path_ptr);
+                println!("        Memory allocated: {} bytes\n", dll_path_c.as_bytes_with_nul().len());
+                Ok(dll_path_ptr)
+            }
+        }
+    ```
+
+    To view are shiny new region of memory, we can use a debugger at this point which is attached to the target process and jump to the base address of the allocated region! Here we see the address we need to jump to
+
+    ![cmd_allocated_mem](./assets/cmd_pre_mem_write.PNG)
+
+    And look at all that space!
+
+    ![dump_allocated_mem](./assets/dump_pre_mem_write.PNG)
