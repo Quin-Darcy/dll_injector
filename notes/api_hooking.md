@@ -139,3 +139,42 @@
     And look at all that space!
 
     ![dump_allocated_mem](./assets/dump_pre_mem_write.PNG)
+
+    Now that we have all this memory, let's write to it. What we will write is the file path to the DLL we want to inject. The reason we write the path and not the DLL itself is because shortly we will be placing a call to a Windows function, `LoadLibraryA` which only needs the path to the module that it loads and it takes care of the rest. There are other cases in which you would write the entire DLL, DLL injection for example, but not when you are using the Windows loader. 
+
+    Writing to this region is straight forward and accomplished with:
+
+    ```Rust
+        // This function will write the DLL path to the memory allocated in the target process
+        // It will accept the process handle, the base address of the allocated memory, and the DLL path
+        // It will return a boolean value indicating whether the DLL path was successfully written
+        fn write_memory(process_handle: HANDLE, dll_path_ptr: *mut c_void, dll_path: &str) -> Result<bool, DWORD> {
+            println!("Writing DLL path to allocated memory...");
+            let dll_path_c = CString::new(dll_path).unwrap();
+            let mut bytes_written: usize = 0;
+
+            let success = unsafe {
+                WriteProcessMemory(
+                    process_handle,
+                    dll_path_ptr,
+                    dll_path_c.as_ptr() as *mut c_void,
+                    dll_path_c.as_bytes_with_nul().len(),
+                    &mut bytes_written,
+                )
+            };
+
+            if success == 0 {
+                Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
+            } else {
+                println!("    DLL path successfully written to allocated memory!");
+                println!("        Bytes written: {}\n", bytes_written);
+                Ok(true)
+            }
+        }
+    ```
+
+    And we can check this was successful by looking back at the `0xc0000` address we saw earlier
+
+    ![dump_post_mem_write](./assets/dump_post_mem_write.PNG)
+
+    There's our boy! Look at him all snuggled up in that address space ... awwwww!
