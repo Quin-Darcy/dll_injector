@@ -9,8 +9,16 @@ use std::fmt;
 use std::iter::once;
 use std::ptr::null_mut;
 use winapi::shared::windef::HWND;
-use winapi::shared::minwindef::UINT;
-use winapi::um::winnt::{IMAGE_DOS_HEADER, IMAGE_NT_HEADERS, IMAGE_IMPORT_DESCRIPTOR, LPCSTR};
+use winapi::shared::minwindef::{UINT, HINSTANCE__};
+use winapi::um::winnt::{
+    IMAGE_DOS_HEADER, 
+    IMAGE_NT_HEADERS, 
+    IMAGE_IMPORT_DESCRIPTOR, 
+    LPCSTR, 
+    IMAGE_OPTIONAL_HEADER,
+    IMAGE_DATA_DIRECTORY,
+    IMAGE_IMPORT_BY_NAME,
+};
 
 
 #[derive(Debug)]
@@ -88,8 +96,8 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str) {
         };
 
         // Store the addresses of the INT and IAT
-        let int_addr = iat_int_addrs.0;
-        let iat_addr = iat_int_addrs.1;
+        let int_addr: usize = iat_int_addrs.0;
+        let iat_addr: usize = iat_int_addrs.1;
 
         // Now that we have the address of the INT and IAT, we need the address of the target function
         let target_func_data: (usize, *mut usize) = match get_func_address_in_iat(int_addr, iat_addr, exe_base_addr, target_function_name) {
@@ -108,14 +116,13 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str) {
         // Finally, we need the address of the hook function
         let hook_func_addr: usize = hook_func as usize;
 
-        let breakpoint1: usize = get_func_address_in_iat as usize;
-        let breakpoint2: usize = perform_hook as usize;
-        let breakpoint3: usize = bye as usize;
 
-        test_msgbox("IAT entry", format!("{:X}", target_func_addr_ptr as usize).as_str());
-        test_msgbox("Breakpoint 1", format!("{:X}", breakpoint1).as_str());
-        test_msgbox("Breakpoint 2", format!("{:X}", breakpoint2).as_str());
-        test_msgbox("Breakpoint 3", format!("{:X}", breakpoint3).as_str());
+
+        test_msgbox("", format!("IAT ENTRY: 0x{:X}\n TARGET FUNC ADDR: 0x{:X}\n HOOK FUNC ADDR: 0x{:X}", 
+            target_func_addr_ptr as usize, 
+            target_func_addr,
+            hook_func_addr,
+        ).as_str());
 
         // Now that we have all the addresses we need, we can perform the hook
         perform_hook(target_func_addr_ptr, hook_func_addr);
@@ -124,13 +131,9 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str) {
     }
 }
 
-fn bye() {
-    test_msgbox("Bye", "Bye");
-}
-
 fn test_msgbox(arg1: &str, arg2: &str) {
-    let message = format!("{}: {}", arg1, arg2);
-    let title = "DLL Message";
+    let message: String = format!("{}: {}", arg1, arg2);
+    let title: &str = "DLL Message";
 
     let wide_message: Vec<u16> = OsStr::new(message.as_str()).encode_wide().chain(once(0)).collect();
     let wide_title: Vec<u16> = OsStr::new(title).encode_wide().chain(once(0)).collect();
@@ -143,7 +146,7 @@ fn test_msgbox(arg1: &str, arg2: &str) {
 // This function will return the base address of the EXE which this DLL has been injected into
 fn get_exe_base_address() -> Result<usize, winapi::shared::minwindef::DWORD> {
     // We can get the base address of the EXE by passing a null value to GetModuleHandleA
-    let exe_handle = unsafe { winapi::um::libloaderapi::GetModuleHandleA(std::ptr::null()) };
+    let exe_handle: *mut HINSTANCE__ = unsafe { winapi::um::libloaderapi::GetModuleHandleA(std::ptr::null()) };
 
     // If the handle is null, the function failed
     if exe_handle.is_null() {
@@ -157,23 +160,23 @@ fn get_exe_base_address() -> Result<usize, winapi::shared::minwindef::DWORD> {
 fn get_import_directory_addr(base_addr: usize) -> usize {
     unsafe {
         // The base address is set to a pointer to an IMAGE_DOS_HEADER structure 
-        let dos_header = base_addr as *const IMAGE_DOS_HEADER;
+        let dos_header: *const IMAGE_DOS_HEADER = base_addr as *const IMAGE_DOS_HEADER;
 
         // The first 64 bytes of the PE file is the IMAGE_DOS_HEADER structure
         // which has a member called e_lfanew which is the offset to the PE header
-        let pe_header = base_addr + (*dos_header).e_lfanew as usize;
+        let pe_header: usize = base_addr + (*dos_header).e_lfanew as usize;
 
         // The PE header is set as a pointer to an IMAGE_NT_HEADERS structure
-        let nt_headers = pe_header as *const IMAGE_NT_HEADERS;
+        let nt_headers: *const IMAGE_NT_HEADERS = pe_header as *const IMAGE_NT_HEADERS;
 
         // The Optional Header is a member of the IMAGE_NT_HEADERS structure
-        let optional_header = &(*nt_headers).OptionalHeader;
+        let optional_header: &IMAGE_OPTIONAL_HEADER = &(*nt_headers).OptionalHeader;
 
         // The Import Directory is one of the data directories in the Optional Header
-        let import_directory = &optional_header.DataDirectory[winapi::um::winnt::IMAGE_DIRECTORY_ENTRY_IMPORT as usize];
+        let import_directory: &IMAGE_DATA_DIRECTORY = &optional_header.DataDirectory[winapi::um::winnt::IMAGE_DIRECTORY_ENTRY_IMPORT as usize];
 
         // The address of the Import Directory is its relative virtual address (RVA) added to the base address
-        let import_directory_addr = base_addr + import_directory.VirtualAddress as usize;
+        let import_directory_addr: usize = base_addr + import_directory.VirtualAddress as usize;
 
         import_directory_addr
     }
@@ -190,20 +193,20 @@ fn locate_iat_and_int(import_directory_addr: usize, exe_base_addr: usize, target
     // base address
     unsafe {  
         while (*import_descriptor).FirstThunk != 0 {
-            let module_name_rva = (*import_descriptor).Name;
-            let module_name_va = (exe_base_addr as isize + module_name_rva as isize) as *const u8;
-            let module_name_ptr = module_name_va as *const u8;
-            let module_name_c = CStr::from_ptr(module_name_ptr as *const i8);
+            let module_name_rva: u32 = (*import_descriptor).Name;
+            let module_name_va: *const u8 = (exe_base_addr as isize + module_name_rva as isize) as *const u8;
+            let module_name_ptr: *const u8 = module_name_va as *const u8;
+            let module_name_c: &CStr = CStr::from_ptr(module_name_ptr as *const i8);
 
-            let module_name_str = match module_name_c.to_str() {
+            let module_name_str: &str = match module_name_c.to_str() {
                 Ok(name) => name,
                 Err(e) => return Err(ParseError::GetModuleNameError(e)),
             };
     
             // If the module name matches the target module, we return the addresses of both the IAT and the INT
             if module_name_str == target_module {
-                let iat_addr = (exe_base_addr  + (*import_descriptor).FirstThunk as usize) as usize;
-                let int_addr = (exe_base_addr  + *(*import_descriptor).u.OriginalFirstThunk_mut() as usize) as usize;
+                let iat_addr: usize = (exe_base_addr  + (*import_descriptor).FirstThunk as usize) as usize;
+                let int_addr: usize = (exe_base_addr  + *(*import_descriptor).u.OriginalFirstThunk_mut() as usize) as usize;
                 return Ok((int_addr, iat_addr));
             }
     
@@ -217,8 +220,8 @@ fn locate_iat_and_int(import_directory_addr: usize, exe_base_addr: usize, target
 // Function to get the address of a specific function in the Import Address Table (IAT)
 fn get_func_address_in_iat(int_addr: usize, iat_addr: usize, exe_base_addr: usize, target_function: &str) -> Result<(usize, *mut usize), ParseError> {
     // Cast the addresses as mutable pointers to usize. These pointers are referring to the Import Name Table (INT) and Import Address Table (IAT).
-    let mut int_ptr = int_addr as *mut usize;
-    let mut iat_ptr = iat_addr as *mut usize;
+    let mut int_ptr: *mut usize = int_addr as *mut usize;
+    let mut iat_ptr: *mut usize = iat_addr as *mut usize;
 
     unsafe {
         // Iterate over the INT and IAT together
@@ -227,15 +230,15 @@ fn get_func_address_in_iat(int_addr: usize, iat_addr: usize, exe_base_addr: usiz
             if *int_ptr & 0x80000000 == 0 {
                 // When the entry is imported by name, the value at the INT pointer is a Relative Virtual Address (RVA). This RVA points to an 
                 // IMAGE_IMPORT_BY_NAME structure that contains the name of the function.
-                let import_by_name_rva = *int_ptr;
+                let import_by_name_rva: usize = *int_ptr;
 
                 // Convert the RVA to a Virtual Address (VA) by adding it to the base address of the executable. Cast the result to a pointer to the
                 // IMAGE_IMPORT_BY_NAME structure.
-                let import_by_name_va = (exe_base_addr as isize + import_by_name_rva as isize) as *mut winapi::um::winnt::IMAGE_IMPORT_BY_NAME;
+                let import_by_name_va: *mut IMAGE_IMPORT_BY_NAME = (exe_base_addr as isize + import_by_name_rva as isize) as *mut IMAGE_IMPORT_BY_NAME;
 
                 // The Name member of the IMAGE_IMPORT_BY_NAME structure is a pointer to a null-terminated string. This string is the name of the imported function.
-                let func_name_c = CStr::from_ptr((*import_by_name_va).Name.as_ptr());
-                let func_name_str = func_name_c.to_string_lossy();
+                let func_name_c: &CStr = CStr::from_ptr((*import_by_name_va).Name.as_ptr());
+                let func_name_str: std::borrow::Cow<'_, str> = func_name_c.to_string_lossy();
 
                 // If the function name matches the target function, return the corresponding address from the IAT. This address is where the application
                 // will jump to when the imported function is called. Also, return the mutable pointer to the function address in the IAT.
@@ -264,19 +267,19 @@ fn perform_hook(target_func_addr: *mut usize, hook_func_addr: usize) {
 }
 
 #[no_mangle]
-pub unsafe extern "system" fn hook_func(hWnd: HWND, lpText: LPCSTR, lpCaption: LPCSTR, uType: UINT) -> winapi::ctypes::c_int {
+pub unsafe extern "system" fn hook_func(h_wnd: HWND, lp_text: LPCSTR, lp_caption: LPCSTR, u_type: UINT) -> winapi::ctypes::c_int {
     // Convert the LPCSTR to a Rust string
-    let c_str: &CStr = CStr::from_ptr(lpText);
+    let c_str: &CStr = CStr::from_ptr(lp_text);
     let str_slice: &str = c_str.to_str().unwrap();
     
     // Your custom message
-    let custom_message = format!("This is what the next message box will say: {}", str_slice);
+    let custom_message: String = format!("This is what the next message box will say: {}", str_slice);
     
     // Display your custom message
-    winapi::um::winuser::MessageBoxA(hWnd, custom_message.as_ptr() as LPCSTR, "Pre-alert".as_ptr() as LPCSTR, uType);
+    winapi::um::winuser::MessageBoxA(h_wnd, custom_message.as_ptr() as LPCSTR, "Pre-alert".as_ptr() as LPCSTR, u_type);
     
     // Display the original MessageBox
-    winapi::um::winuser::MessageBoxA(hWnd, lpText, lpCaption, uType)
+    winapi::um::winuser::MessageBoxA(h_wnd, lp_text, lp_caption, u_type)
 }
 
 
