@@ -5,14 +5,19 @@ use std::ffi::{OsStr, CString, CStr};
 use std::iter::once;
 use std::os::windows::ffi::OsStrExt;
 
+use winapi::um::handleapi::CloseHandle;
 use winapi::um::processthreadsapi::{CreateProcessW, CreateRemoteThread, ResumeThread, SuspendThread, STARTUPINFOW, PROCESS_INFORMATION};
 use winapi::um::winbase::CREATE_SUSPENDED;
 use winapi::um::memoryapi::{VirtualAllocEx, WriteProcessMemory};
 use winapi::shared::minwindef::{DWORD, HMODULE, FARPROC, LPVOID};
 use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
 use winapi::ctypes::c_void;
-use winapi::um::winnt::{LPCSTR, LPSTR, HANDLE};
+use winapi::um::winbase::WAIT_OBJECT_0;
+use winapi::um::winnt::{LPCSTR, LPSTR, HANDLE, PAGE_READWRITE};
 use winapi::um::psapi::{EnumProcessModulesEx, GetModuleBaseNameA, LIST_MODULES_ALL};
+
+const WAIT_TIMEOUT: DWORD = 258;
+
 
 
 // Convert a string to a wide string
@@ -284,6 +289,67 @@ fn get_loadlib_addr(kernel32_base_addr: HMODULE, offset: usize) -> Result<*const
     Ok(loadlib_addr_ptr)
 } 
 
+// This function will create an Event object using CreateEventA and return the handle to the Event object
+fn create_event() -> Result<HANDLE, DWORD> {
+    println!("Creating Event object in target process...");
+    let event_handle: *mut c_void = unsafe { winapi::um::synchapi::CreateEventA(null_mut(), 0, 0, null_mut()) };
+    if event_handle.is_null() {
+        return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+    }
+
+    println!("    Event object created successfully!");
+    println!("        Event handle: {:?}\n", event_handle);
+
+    Ok(event_handle)
+}
+
+// This function will create a file mapping object using CreateFileMappingA, then create a view of the file mapping
+// in the current process using MapViewOfFile. It will then write the handle to the Event object into the file mapping.
+// It then unmaps the view of the file mapping from the current process and then returns the handle to the file mapping object.
+fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str) -> Result<HANDLE, DWORD> {
+    println!("Creating file mapping object in current process...");
+    let map_name = std::ffi::CString::new(file_mapping_name).unwrap();
+    unsafe {
+        // Create a file mapping object
+        let file_mapping_handle = winapi::um::winbase::CreateFileMappingA(
+            winapi::um::handleapi::INVALID_HANDLE_VALUE,
+            std::ptr::null_mut(),
+            PAGE_READWRITE,
+            0,
+            std::mem::size_of::<HANDLE>() as DWORD,
+            map_name.as_ptr(),
+        );
+
+        if file_mapping_handle.is_null() {
+            return Err(winapi::um::errhandlingapi::GetLastError());
+        }
+
+        // Create a view of the file mapping in the current process
+        let file_view_ptr = winapi::um::memoryapi::MapViewOfFile(
+            file_mapping_handle,
+            winapi::um::memoryapi::FILE_MAP_ALL_ACCESS,
+            0,
+            0,
+            0,
+        );
+
+        if file_view_ptr.is_null() {
+            return Err(winapi::um::errhandlingapi::GetLastError());
+        }
+
+        // Write the event handle into the file mapping
+        *(file_view_ptr as *mut HANDLE) = event_handle;
+
+        // Unmap the view of the file mapping as it's no longer needed in this process
+        winapi::um::memoryapi::UnmapViewOfFile(file_view_ptr);
+
+        println!("    File mapping object created successfully!");
+        println!("        File mapping handle: {:?}\n", file_mapping_handle);
+
+        Ok(file_mapping_handle)
+    }
+}
+
 // Now we will create a remote thread in the target process using CreateRemoteThread
 // This thread will be responsible for loading the DLL into the target process
 // using the LoadLibraryA function whose address we obtained above
@@ -310,23 +376,46 @@ fn create_remote_thread(process_info: PROCESS_INFORMATION, load_library: FARPROC
     }
 }
 
-// This function will wait for the remote thread to finish executing
-// Once the thread has finished executing, we will close the handle to the thread
-fn resume_and_terminate_process(process_info: PROCESS_INFORMATION) -> Result<(), DWORD> {
-    println!("Press enter to resume the process...");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
-    let _previous_suspend_count = unsafe { ResumeThread(process_info.hThread) };
-    println!("Press enter to terminate the process...");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
-    let success = unsafe { winapi::um::processthreadsapi::TerminateProcess(process_info.hProcess, 0) };
+// This function will use WaitForSingleObject to wait for the Event object to be signaled
+// It receives a timeout value as an argument which is the amount of time to wait for the Event object to be signaled
+fn wait_for_event(event_handle: HANDLE, timeout: DWORD) -> Result<bool, DWORD> {
+    println!("Waiting for DLL to signal event...");
+    let wait_result = unsafe { winapi::um::synchapi::WaitForSingleObject(event_handle, timeout) };
+
+    match wait_result {
+        WAIT_OBJECT_0 => {
+            println!("    DLL signaled event!");
+            Ok(true)
+        },
+        WAIT_TIMEOUT => {
+            println!("    Timeout while waiting for DLL to signal event.");
+            Ok(false)
+        },
+        _ => Err(unsafe { winapi::um::errhandlingapi::GetLastError() }),
+    }
+}
+
+
+// This function will close the handle to the Event object
+fn close_event_handle(event_handle: HANDLE) -> Result<(), DWORD> {
+    let success = unsafe { CloseHandle(event_handle) };
     if success == 0 {
         Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
     } else {
         Ok(())
     }
 }
+
+fn terminate_process(process_info: PROCESS_INFORMATION) {
+    println!("Terminating target process...");
+    let success = unsafe { winapi::um::processthreadsapi::TerminateProcess(process_info.hProcess, 0) };
+    if success == 0 {
+        println!("    Failed to terminate target process! {}", unsafe { winapi::um::errhandlingapi::GetLastError() });
+    } else {
+        println!("    Target process terminated successfully!");
+    }
+}
+
 
 fn main() {
     // First, we will check if the user has provided the correct number of arguments
@@ -423,13 +512,29 @@ fn main() {
         }
     };
 
-    /* THIS IS FOR DEBUGGING PURPOSES ONLY
+    // At this point, we will create an Event object that will be used as a means to communicate between
+    // the target process and this program. We will use this Event object to signal when the DLL has been
+    // loaded into the process, finished its initialization, and hooking has been completed
+    let event_handle: HANDLE = match create_event() {
+        Ok(event_handle) => event_handle,
+        Err(e) => {
+            println!("Failed to create event object!");
+            println!("    Error: {}\n", e);
+            return;
+        }
+    };
 
-    println!("Quick! Attach a debugger to PID: {}\n", pi.dwProcessId);
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
-    
-    */
+    // We will now create a file mapping object that will be used to share the Event object between
+    // this program and the target process. 
+    let file_mapping_name: &str = "Global\\Event";
+    let _file_mapping_handle: HANDLE = match create_file_mapping(event_handle, file_mapping_name) {
+        Ok(file_mapping_handle) => file_mapping_handle,
+        Err(e) => {
+            println!("Failed to create file mapping object!");
+            println!("    Error: {}\n", e);
+            return;
+        }
+    };
 
     // Now that kernel32.dll is loaded into the process, we can call LoadLibraryA
     // We will do this by calling create_remote_thread
@@ -442,13 +547,54 @@ fn main() {
         }
     };
 
-    // Finally, we will resume the process and terminate it
-    match resume_and_terminate_process(pi) {
-        Ok(_) => (),
+    // Now we will wait for the event to be signaled by the DLL
+    let timeout: DWORD = 5000; 
+    let wait_result = match wait_for_event(event_handle, timeout) {
+        Ok(wait_result) => wait_result,
         Err(e) => {
-            println!("Failed to resume and terminate process!");
+            println!("Failed to wait for event!");
             println!("    Error: {}\n", e);
             return;
         }
     };
+
+    // We now check if the event was signaled or if it timed out
+    if wait_result {
+        println!("DLL successfully loaded into process!\n");
+
+        // We will now close the handle to the event object
+        let _event_close_result = match close_event_handle(event_handle) {
+            Ok(event_close_result) => event_close_result,
+            Err(e) => {
+                println!("Failed to close handle to event object!");
+                println!("    Error: {}\n", e);
+                return;
+            }
+        };
+
+        println!("Resuming Target Process Main Thread...\n");
+
+        // We will now resume the main thread of the target process
+        let success = unsafe { winapi::um::processthreadsapi::ResumeThread(pi.hThread) };
+        if success == u32::MAX {
+            println!("Failed to resume main thread of target process!");
+            println!("    Error: {}\n", unsafe { winapi::um::errhandlingapi::GetLastError() });
+            terminate_process(pi);
+            return;
+        } else {
+            println!("Successfully resumed main thread of target process!\n");
+        }
+    } else {
+        println!("DLL failed to load into process!\n");
+
+        // We will now close the handle to the event object
+        let _event_close_result = match close_event_handle(event_handle) {
+            Ok(event_close_result) => event_close_result,
+            Err(e) => {
+                println!("Failed to close handle to event object!");
+                println!("    Error: {}\n", e);
+                return;
+            }
+        };
+    }
 }

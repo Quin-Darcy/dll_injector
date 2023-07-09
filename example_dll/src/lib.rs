@@ -9,6 +9,8 @@ use std::fmt;
 use std::iter::once;
 use std::ptr::null_mut;
 use winapi::shared::windef::HWND;
+use winapi::um::winbase::{lstrcpyA, OpenFileMappingA};
+use winapi::um::memoryapi::{MapViewOfFile, UnmapViewOfFile, FILE_MAP_ALL_ACCESS};
 use winapi::shared::minwindef::{UINT, HINSTANCE__};
 use winapi::um::winnt::{
     IMAGE_DOS_HEADER, 
@@ -18,6 +20,7 @@ use winapi::um::winnt::{
     IMAGE_OPTIONAL_HEADER,
     IMAGE_DATA_DIRECTORY,
     IMAGE_IMPORT_BY_NAME,
+    EVENT_MODIFY_STATE,
 };
 
 
@@ -48,12 +51,13 @@ pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> 
     if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
         let target_module_name: &str = "USER32.dll";
         let target_function_name: &str = "MessageBoxA";
-        begin_hooking(target_module_name, target_function_name);
+        let file_mapping_name: &str = "Global\\Event";
+        begin_hooking(target_module_name, target_function_name, file_mapping_name);
     }
     true
 }
 
-fn begin_hooking(target_module_name: &str, target_function_name: &str) {
+fn begin_hooking(target_module_name: &str, target_function_name: &str, file_mapping_name: &str) {
     // This will store the base address of the currently running EXE
     // That is, the process which this DLL has been injected into
     let exe_base_addr: usize = match get_exe_base_address() {
@@ -116,18 +120,28 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str) {
         // Finally, we need the address of the hook function
         let hook_func_addr: usize = hook_func as usize;
 
-
-
+        /*
         test_msgbox("", format!("IAT ENTRY: 0x{:X}\n TARGET FUNC ADDR: 0x{:X}\n HOOK FUNC ADDR: 0x{:X}", 
             target_func_addr_ptr as usize, 
             target_func_addr,
             hook_func_addr,
         ).as_str());
+        */
+             
 
         // Now that we have all the addresses we need, we can perform the hook
         perform_hook(target_func_addr_ptr, hook_func_addr);
 
-        // ----- perform the actual hooking here -----
+        // Open the file mapping, create a view of it, and signal the event
+        let _file_mapping_handle: () = match set_event(file_mapping_name) {
+            Ok(handle) => {
+                handle
+            },
+            Err(e) => {
+                test_msgbox("Failed to open file mapping", format!("{}", e).as_str());
+                panic!("Failed to open file mapping: {}", e)
+            },
+        };
     }
 }
 
@@ -265,6 +279,59 @@ fn perform_hook(target_func_addr: *mut usize, hook_func_addr: usize) {
         *target_func_addr = hook_func_addr;   
     }
 }
+
+// This function will open the file mapping created by the injector process
+// It will create a view of the file mapping, retrieve the pointer to the Event object, and set the Event
+fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::DWORD> {
+    let mut event_name: [u8; 256] = [0; 256];  // buffer for the event name
+    
+    unsafe {
+        // Open the file mapping
+        let file_mapping_handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, 0, file_mapping_name.as_ptr() as *const i8);
+
+        if file_mapping_handle.is_null() {
+            return Err(winapi::um::errhandlingapi::GetLastError());
+        }
+
+        // Create a view of the file mapping
+        let file_view_ptr = MapViewOfFile(file_mapping_handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+
+        if file_view_ptr.is_null() {
+            winapi::um::handleapi::CloseHandle(file_mapping_handle);
+            return Err(winapi::um::errhandlingapi::GetLastError());
+        }
+
+        // Retrieve the event name
+        lstrcpyA(event_name.as_mut_ptr() as *mut i8, file_view_ptr as *const i8);
+
+        // Unmap view of file
+        UnmapViewOfFile(file_view_ptr);
+
+        // Close the handle to the file mapping
+        winapi::um::handleapi::CloseHandle(file_mapping_handle);
+
+        // Open the event by name
+        let event_handle = winapi::um::synchapi::OpenEventA(EVENT_MODIFY_STATE, 0, event_name.as_ptr() as *const i8);
+
+        if event_handle.is_null() {
+            return Err(winapi::um::errhandlingapi::GetLastError());
+        }
+
+        // Set the event
+        let success = winapi::um::synchapi::SetEvent(event_handle);
+
+        if success == 0 {
+            winapi::um::handleapi::CloseHandle(event_handle);
+            return Err(winapi::um::errhandlingapi::GetLastError());
+        }
+
+        // Close the event handle
+        winapi::um::handleapi::CloseHandle(event_handle);
+    }
+
+    Ok(())
+}
+
 
 #[no_mangle]
 pub unsafe extern "system" fn hook_func(h_wnd: HWND, lp_text: LPCSTR, lp_caption: LPCSTR, u_type: UINT) -> winapi::ctypes::c_int {
