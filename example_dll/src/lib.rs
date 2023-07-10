@@ -116,20 +116,17 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str, file_mapp
             },
         };
 
-        let _target_func_addr: usize = target_func_data.0;
+        let target_func_addr: usize = target_func_data.0;
         let target_func_addr_ptr: *mut usize = target_func_data.1;
 
         // Finally, we need the address of the hook function
         let hook_func_addr: usize = hook_func as usize;
 
-        /*
         test_msgbox("", format!("IAT ENTRY: 0x{:X}\n TARGET FUNC ADDR: 0x{:X}\n HOOK FUNC ADDR: 0x{:X}", 
             target_func_addr_ptr as usize, 
             target_func_addr,
             hook_func_addr,
         ).as_str());
-        */
-             
 
         // Now that we have all the addresses we need, we can perform the hook
         perform_hook(target_func_addr_ptr, hook_func_addr);
@@ -140,7 +137,7 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str, file_mapp
                 handle
             },
             Err(e) => {
-                test_msgbox("Failed to open file mapping", format!("{}", e).as_str());
+                test_msgbox("Failed to signal event", format!("{}", e).as_str());
                 return;
             },
         };
@@ -298,6 +295,8 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
         if file_mapping_handle.is_null() {
             test_msgbox("Failed to open file mapping", "");
             return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            test_msgbox("Opened file mapping", "");
         }
 
         // Create a view of the file mapping
@@ -307,22 +306,33 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
             winapi::um::handleapi::CloseHandle(file_mapping_handle);
             file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
             return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            test_msgbox("Created view of file mapping", "");
         }
 
         // Retrieve the event name
         lstrcpyA(event_name.as_mut_ptr() as *mut i8, file_view_ptr as *const i8);
+
+        // Print event name
+        let c_string = std::ffi::CStr::from_ptr(event_name.as_ptr() as *const i8);
+        let str_slice = c_string.to_str().unwrap();
+        test_msgbox("Event name", str_slice);
+
 
         // Unmap view of file
         UnmapViewOfFile(file_view_ptr);
 
         // Close the handle to the file mapping
         winapi::um::handleapi::CloseHandle(file_mapping_handle);
+        file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
 
         // Open the event by name
         let mut event_handle = winapi::um::synchapi::OpenEventA(EVENT_MODIFY_STATE, 0, event_name.as_ptr() as *const i8);
 
         if event_handle.is_null() {
             return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            test_msgbox("Opened event", "");
         }
 
         // Set the event
@@ -332,6 +342,8 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
             winapi::um::handleapi::CloseHandle(event_handle);
             event_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
             return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            test_msgbox("Set event", "");
         }
 
         // Close the event handle

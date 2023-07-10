@@ -413,6 +413,10 @@ fn wait_for_event(event_handle: HANDLE, timeout: DWORD) -> Result<bool, DWORD> {
 
 // This function is for closing any open handles, deallocating any allocated memory, and terminating the process
 fn cleanup(pi: Option<PROCESS_INFORMATION>, dll_path_ptr: Option<LPVOID>, event_handle: Option<HANDLE>, thread_id: Option<DWORD>) {
+    println!("Press Enter to proceed with cleanup...");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
+
     // Free the allocated memory
     if let Some(dll_path_ptr) = dll_path_ptr {
         if let Some(pi) = pi {
@@ -474,17 +478,18 @@ fn cleanup(pi: Option<PROCESS_INFORMATION>, dll_path_ptr: Option<LPVOID>, event_
 
     // Terminate the target process and close the handles to the process and its main thread
     if let Some(pi) = pi {
-        println!("Terminating target process...");
-        if pi.hProcess != winapi::um::handleapi::INVALID_HANDLE_VALUE {
-            let process_status = unsafe { winapi::um::processthreadsapi::GetExitCodeProcess(pi.hProcess, std::ptr::null_mut()) };
-            if process_status == 259 { // PROCESS_STILL_ACTIVE
-                let success = unsafe { winapi::um::processthreadsapi::TerminateProcess(pi.hProcess, 0) };
-                if success == 0 {
-                    println!("    Failed to terminate target process!\n");
-                } else {
-                    println!("    Target process terminated successfully!\n");
-                }
-            }
+        //println!("Resuming target process...");
+        //if pi.hProcess != winapi::um::handleapi::INVALID_HANDLE_VALUE {
+        //    let process_status = unsafe { winapi::um::processthreadsapi::GetExitCodeProcess(pi.hProcess, std::ptr::null_mut()) };
+            // if process_status == 259 { // PROCESS_STILL_ACTIVE
+            //     let success = unsafe { winapi::um::processthreadsapi::ResumeThread(pi.hThread) };
+            //     if success == u32::MAX {
+            //         println!("    Failed to resume main thread of target process!");
+            //         println!("        Error: {}\n", unsafe { winapi::um::errhandlingapi::GetLastError() });
+            //     } else {
+            //         println!("    Successfully resumed main thread of target process!\n");
+            //     }
+            // }
 
             println!("Closing handle to process...");
             let success = unsafe { winapi::um::handleapi::CloseHandle(pi.hProcess) };
@@ -493,7 +498,7 @@ fn cleanup(pi: Option<PROCESS_INFORMATION>, dll_path_ptr: Option<LPVOID>, event_
             } else {
                 println!("    Handle to process closed successfully!\n");
             }
-        }
+        //}
 
         if pi.hThread != winapi::um::handleapi::INVALID_HANDLE_VALUE {
             println!("Closing handle to main thread...");
@@ -506,8 +511,6 @@ fn cleanup(pi: Option<PROCESS_INFORMATION>, dll_path_ptr: Option<LPVOID>, event_
         }
     }
 }
-
-
 
 fn main() {
     // First, we will check if the user has provided the correct number of arguments
@@ -688,6 +691,10 @@ fn main() {
             return;
         }
     };
+
+    println!("Press Enter to proceed with program...");
+    let mut input = String::new();
+    std::io::stdin().read_line(&mut input).unwrap();
 
     // Now we will wait for the event to be signaled by the DLL
     let timeout: DWORD = 10000; 
