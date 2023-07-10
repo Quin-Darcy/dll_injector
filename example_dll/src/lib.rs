@@ -51,7 +51,7 @@ pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> 
     if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
         let target_module_name: &str = "USER32.dll";
         let target_function_name: &str = "MessageBoxA";
-        let file_mapping_name: &str = "Global\\Event";
+        let file_mapping_name: &str = "Local\\__AA__AA__";
         begin_hooking(target_module_name, target_function_name, file_mapping_name);
     }
     true
@@ -66,7 +66,8 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str, file_mapp
         }
         Err(e) => {
             test_msgbox("Failed to get EXE base address", format!("{}", e).as_str());
-            panic!("Failed to get EXE base address: {}", e)
+            //panic!("Failed to get EXE base address: {}", e)
+            return;
         },
     };
 
@@ -95,7 +96,8 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str, file_mapp
             },
             Err(e) => { 
                 test_msgbox("Failed to locate IAT and INT", format!("{}", e).as_str());
-                panic!("Failed to locate IAT and INT: {}", e) 
+                //panic!("Failed to locate IAT and INT: {}", e) 
+                return;
             },
         };
 
@@ -110,11 +112,11 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str, file_mapp
             },
             Err(e) => {
                 test_msgbox("Failed to get function address", format!("{}", e).as_str());
-                panic!("Failed to get function address: {}", e)
+                return;
             },
         };
 
-        let target_func_addr: usize = target_func_data.0;
+        let _target_func_addr: usize = target_func_data.0;
         let target_func_addr_ptr: *mut usize = target_func_data.1;
 
         // Finally, we need the address of the hook function
@@ -139,7 +141,7 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str, file_mapp
             },
             Err(e) => {
                 test_msgbox("Failed to open file mapping", format!("{}", e).as_str());
-                panic!("Failed to open file mapping: {}", e)
+                return;
             },
         };
     }
@@ -287,9 +289,14 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
     
     unsafe {
         // Open the file mapping
-        let file_mapping_handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, 0, file_mapping_name.as_ptr() as *const i8);
+        if file_mapping_name.contains('\0') {
+            return Err(0x108);  // Replace with an appropriate error code
+        }
+        let c_file_mapping_name = std::ffi::CString::new(file_mapping_name).unwrap();
+        let mut file_mapping_handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, 0, c_file_mapping_name.as_ptr());
 
         if file_mapping_handle.is_null() {
+            test_msgbox("Failed to open file mapping", "");
             return Err(winapi::um::errhandlingapi::GetLastError());
         }
 
@@ -298,6 +305,7 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
 
         if file_view_ptr.is_null() {
             winapi::um::handleapi::CloseHandle(file_mapping_handle);
+            file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
             return Err(winapi::um::errhandlingapi::GetLastError());
         }
 
@@ -311,7 +319,7 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
         winapi::um::handleapi::CloseHandle(file_mapping_handle);
 
         // Open the event by name
-        let event_handle = winapi::um::synchapi::OpenEventA(EVENT_MODIFY_STATE, 0, event_name.as_ptr() as *const i8);
+        let mut event_handle = winapi::um::synchapi::OpenEventA(EVENT_MODIFY_STATE, 0, event_name.as_ptr() as *const i8);
 
         if event_handle.is_null() {
             return Err(winapi::um::errhandlingapi::GetLastError());
@@ -322,11 +330,13 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
 
         if success == 0 {
             winapi::um::handleapi::CloseHandle(event_handle);
+            event_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
             return Err(winapi::um::errhandlingapi::GetLastError());
         }
 
         // Close the event handle
         winapi::um::handleapi::CloseHandle(event_handle);
+        event_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
     }
 
     Ok(())
