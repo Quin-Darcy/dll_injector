@@ -52,6 +52,7 @@ pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> 
         let target_module_name: &str = "USER32.dll";
         let target_function_name: &str = "MessageBoxA";
         let file_mapping_name: &str = "Local\\__AA__AA__";
+
         begin_hooking(target_module_name, target_function_name, file_mapping_name);
     }
     true
@@ -122,11 +123,11 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str, file_mapp
         // Finally, we need the address of the hook function
         let hook_func_addr: usize = hook_func as usize;
 
-        test_msgbox("", format!("IAT ENTRY: 0x{:X}\n TARGET FUNC ADDR: 0x{:X}\n HOOK FUNC ADDR: 0x{:X}", 
-            target_func_addr_ptr as usize, 
-            target_func_addr,
-            hook_func_addr,
-        ).as_str());
+        // test_msgbox("", format!("IAT ENTRY: 0x{:X}\n TARGET FUNC ADDR: 0x{:X}\n HOOK FUNC ADDR: 0x{:X}", 
+        //     target_func_addr_ptr as usize, 
+        //     target_func_addr,
+        //     hook_func_addr,
+        // ).as_str());
 
         // Now that we have all the addresses we need, we can perform the hook
         perform_hook(target_func_addr_ptr, hook_func_addr);
@@ -282,8 +283,6 @@ fn perform_hook(target_func_addr: *mut usize, hook_func_addr: usize) {
 // This function will open the file mapping created by the injector process
 // It will create a view of the file mapping, retrieve the pointer to the Event object, and set the Event
 fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::DWORD> {
-    let mut event_name: [u8; 256] = [0; 256];  // buffer for the event name
-    
     unsafe {
         // Open the file mapping
         if file_mapping_name.contains('\0') {
@@ -295,9 +294,7 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
         if file_mapping_handle.is_null() {
             test_msgbox("Failed to open file mapping", "");
             return Err(winapi::um::errhandlingapi::GetLastError());
-        } else {
-            test_msgbox("Opened file mapping", "");
-        }
+        } 
 
         // Create a view of the file mapping
         let file_view_ptr = MapViewOfFile(file_mapping_handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
@@ -305,19 +302,17 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
         if file_view_ptr.is_null() {
             winapi::um::handleapi::CloseHandle(file_mapping_handle);
             file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
+            test_msgbox("Failed to create view of file mapping", "");
             return Err(winapi::um::errhandlingapi::GetLastError());
-        } else {
-            test_msgbox("Created view of file mapping", "");
         }
 
-        // Retrieve the event name
-        lstrcpyA(event_name.as_mut_ptr() as *mut i8, file_view_ptr as *const i8);
-
-        // Print event name
-        let c_string = std::ffi::CStr::from_ptr(event_name.as_ptr() as *const i8);
-        let str_slice = c_string.to_str().unwrap();
-        test_msgbox("Event name", str_slice);
-
+        // Read the event handle from the file mapping
+        let mut event_handle = *(file_view_ptr as *mut winapi::um::winnt::HANDLE);
+        let last_error = winapi::um::errhandlingapi::GetLastError();
+        if last_error != 0 || event_handle.is_null() {
+            test_msgbox("Failed to read event handle from file mapping", "");
+            return Err(last_error);
+        }
 
         // Unmap view of file
         UnmapViewOfFile(file_view_ptr);
@@ -326,15 +321,6 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
         winapi::um::handleapi::CloseHandle(file_mapping_handle);
         file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
 
-        // Open the event by name
-        let mut event_handle = winapi::um::synchapi::OpenEventA(EVENT_MODIFY_STATE, 0, event_name.as_ptr() as *const i8);
-
-        if event_handle.is_null() {
-            return Err(winapi::um::errhandlingapi::GetLastError());
-        } else {
-            test_msgbox("Opened event", "");
-        }
-
         // Set the event
         let success = winapi::um::synchapi::SetEvent(event_handle);
 
@@ -342,8 +328,6 @@ fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::D
             winapi::um::handleapi::CloseHandle(event_handle);
             event_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
             return Err(winapi::um::errhandlingapi::GetLastError());
-        } else {
-            test_msgbox("Set event", "");
         }
 
         // Close the event handle

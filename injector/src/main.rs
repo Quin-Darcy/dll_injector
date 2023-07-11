@@ -8,11 +8,11 @@ use std::os::windows::ffi::OsStrExt;
 use winapi::um::processthreadsapi::{CreateProcessW, CreateRemoteThread, ResumeThread, SuspendThread, STARTUPINFOW, PROCESS_INFORMATION};
 use winapi::um::winbase::CREATE_SUSPENDED;
 use winapi::um::memoryapi::{VirtualAllocEx, WriteProcessMemory, MapViewOfFile, UnmapViewOfFile, FILE_MAP_ALL_ACCESS};
-use winapi::shared::minwindef::{DWORD, HMODULE, FARPROC, LPVOID};
+use winapi::shared::minwindef::{DWORD, HMODULE, FARPROC, LPVOID, FALSE};
 use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
 use winapi::ctypes::c_void;
 use winapi::um::winbase::{OpenFileMappingA, WAIT_OBJECT_0};
-use winapi::um::winnt::{LPCSTR, LPSTR, HANDLE, PAGE_READWRITE};
+use winapi::um::winnt::{LPCSTR, LPSTR, HANDLE, PAGE_READWRITE, DUPLICATE_SAME_ACCESS};
 use winapi::um::psapi::{EnumProcessModulesEx, GetModuleBaseNameA, LIST_MODULES_ALL};
 
 const WAIT_TIMEOUT: DWORD = 258;
@@ -311,10 +311,27 @@ fn create_event() -> Result<HANDLE, DWORD> {
 // This function will create a file mapping object using CreateFileMappingA, then create a view of the file mapping
 // in the current process using MapViewOfFile. It will then write the handle to the Event object into the file mapping.
 // It then unmaps the view of the file mapping from the current process and then returns the handle to the file mapping object.
-fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str) -> Result<HANDLE, DWORD> {
+fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str, source_process_handle: HANDLE, target_process_handle: HANDLE) -> Result<HANDLE, DWORD> {
     println!("Creating file mapping object in current process...");
     let map_name: CString = std::ffi::CString::new(file_mapping_name).unwrap();
+    let mut duplicated_handle: HANDLE = std::ptr::null_mut();
+
     unsafe {
+        // Duplicate the handle
+        let duplication_success = winapi::um::handleapi::DuplicateHandle(
+            source_process_handle,
+            event_handle,
+            target_process_handle,
+            &mut duplicated_handle,
+            0,
+            FALSE,
+            DUPLICATE_SAME_ACCESS,
+        );
+
+        if duplication_success == 0 {
+            return Err(winapi::um::errhandlingapi::GetLastError());
+        }
+
         // Create a file mapping object
         let file_mapping_handle: *mut c_void = winapi::um::winbase::CreateFileMappingA(
             winapi::um::handleapi::INVALID_HANDLE_VALUE,
@@ -342,8 +359,8 @@ fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str) -> Result<
             return Err(winapi::um::errhandlingapi::GetLastError());
         }
 
-        // Write the event handle into the file mapping
-        *(file_view_ptr as *mut HANDLE) = event_handle;
+        // Write the duplicated event handle into the file mapping
+        *(file_view_ptr as *mut HANDLE) = duplicated_handle;
         let last_error = winapi::um::errhandlingapi::GetLastError();
         if last_error != 0 {
             return Err(last_error);
@@ -365,6 +382,7 @@ fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str) -> Result<
         Ok(file_mapping_handle)
     }
 }
+
 
 // Now we will create a remote thread in the target process using CreateRemoteThread
 // This thread will be responsible for loading the DLL into the target process
@@ -411,11 +429,10 @@ fn wait_for_event(event_handle: HANDLE, timeout: DWORD) -> Result<bool, DWORD> {
     }
 }
 
-// This function is for closing any open handles, deallocating any allocated memory, and terminating the process
 fn cleanup(pi: Option<PROCESS_INFORMATION>, dll_path_ptr: Option<LPVOID>, event_handle: Option<HANDLE>, thread_id: Option<DWORD>) {
-    println!("Press Enter to proceed with cleanup...");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
+    // println!("Press Enter to proceed with cleanup...");
+    // let mut input = String::new();
+    // std::io::stdin().read_line(&mut input).unwrap();
 
     // Free the allocated memory
     if let Some(dll_path_ptr) = dll_path_ptr {
@@ -476,29 +493,34 @@ fn cleanup(pi: Option<PROCESS_INFORMATION>, dll_path_ptr: Option<LPVOID>, event_
     }
 
 
-    // Terminate the target process and close the handles to the process and its main thread
+    // Resume the target process and close the handles to the process and its main thread
     if let Some(pi) = pi {
-        //println!("Resuming target process...");
-        //if pi.hProcess != winapi::um::handleapi::INVALID_HANDLE_VALUE {
-        //    let process_status = unsafe { winapi::um::processthreadsapi::GetExitCodeProcess(pi.hProcess, std::ptr::null_mut()) };
-            // if process_status == 259 { // PROCESS_STILL_ACTIVE
-            //     let success = unsafe { winapi::um::processthreadsapi::ResumeThread(pi.hThread) };
-            //     if success == u32::MAX {
-            //         println!("    Failed to resume main thread of target process!");
-            //         println!("        Error: {}\n", unsafe { winapi::um::errhandlingapi::GetLastError() });
-            //     } else {
-            //         println!("    Successfully resumed main thread of target process!\n");
-            //     }
-            // }
-
-            println!("Closing handle to process...");
-            let success = unsafe { winapi::um::handleapi::CloseHandle(pi.hProcess) };
-            if success == 0 {
-                println!("    Failed to close handle to process!\n");
-            } else {
-                println!("    Handle to process closed successfully!\n");
+        println!("Resuming target process...");
+        if pi.hProcess != winapi::um::handleapi::INVALID_HANDLE_VALUE {
+            let mut suspend_count = 0;
+            loop {
+                let result = unsafe { winapi::um::processthreadsapi::ResumeThread(pi.hThread) };
+                if result == u32::MAX {
+                    println!("    Failed to resume main thread of target process!");
+                    println!("        Error: {}\n", unsafe { winapi::um::errhandlingapi::GetLastError() });
+                    break;
+                } else {
+                    suspend_count = result;
+                    if suspend_count == 0 {
+                        println!("    Successfully resumed main thread of target process!\n");
+                        break;
+                    }
+                }
             }
-        //}
+        }
+
+        println!("Closing handle to process...");
+        let success = unsafe { winapi::um::handleapi::CloseHandle(pi.hProcess) };
+        if success == 0 {
+            println!("    Failed to close handle to process!\n");
+        } else {
+            println!("    Handle to process closed successfully!\n");
+        }
 
         if pi.hThread != winapi::um::handleapi::INVALID_HANDLE_VALUE {
             println!("Closing handle to main thread...");
@@ -511,6 +533,7 @@ fn cleanup(pi: Option<PROCESS_INFORMATION>, dll_path_ptr: Option<LPVOID>, event_
         }
     }
 }
+
 
 fn main() {
     // First, we will check if the user has provided the correct number of arguments
@@ -628,7 +651,8 @@ fn main() {
     // We will now create a file mapping object that will be used to share the Event object between
     // this program and the target process. 
     let file_mapping_name: &str = "Local\\__AA__AA__";
-    let _file_mapping_handle: HANDLE = match create_file_mapping(event_handle, file_mapping_name) {
+    let current_process_handle: HANDLE = unsafe { winapi::um::processthreadsapi::GetCurrentProcess() };
+    let _file_mapping_handle: HANDLE = match create_file_mapping(event_handle, file_mapping_name, current_process_handle, pi.hProcess) {
         Ok(file_mapping_handle) => file_mapping_handle,
         Err(e) => {
             println!("Failed to create file mapping object!");
@@ -637,48 +661,6 @@ fn main() {
             return;
         }
     };
-
-    //--------------------------------------------------------------------------------------------------
-    println!("Testing file mapping object...");
-    let mut event_handle_from_mapping: HANDLE = 0 as HANDLE;
-
-    unsafe {
-        // Open the file mapping
-        let c_file_mapping_name = std::ffi::CString::new(file_mapping_name).unwrap();
-        let file_mapping_handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, 0, c_file_mapping_name.as_ptr());
-
-        if file_mapping_handle.is_null() {
-            println!("    Failed to open file mapping object!\n");
-            //cleanup(Some(pi), Some(dll_path_ptr), Some(event_handle), Some(file_mapping_handle));
-            return;
-        } else {
-            println!("    Successfully opened file mapping object!");}
-
-        // Create a view of the file mapping
-        let file_view_ptr = MapViewOfFile(file_mapping_handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-
-        if file_view_ptr.is_null() {
-            println!("    Failed to map view of file!\n");
-            winapi::um::handleapi::CloseHandle(file_mapping_handle);
-            //cleanup(Some(pi), Some(dll_path_ptr), Some(event_handle), Some(file_mapping_handle));
-            return;
-        } else {
-            println!("    Successfully mapped view of file!");
-        }
-
-        // Read the event handle from the file mapping
-        event_handle_from_mapping = *(file_view_ptr as *mut HANDLE);
-
-        // Unmap view of file
-        UnmapViewOfFile(file_view_ptr);
-
-        // Close the handle to the file mapping
-        winapi::um::handleapi::CloseHandle(file_mapping_handle);
-    }
-
-    println!("    The event handle read from the file mapping is: {:?}\n", event_handle_from_mapping);
-
-    //--------------------------------------------------------------------------------------------------
 
     // Now that kernel32.dll is loaded into the process, we can call LoadLibraryA
     // We will do this by calling create_remote_thread
@@ -692,9 +674,9 @@ fn main() {
         }
     };
 
-    println!("Press Enter to proceed with program...");
-    let mut input = String::new();
-    std::io::stdin().read_line(&mut input).unwrap();
+    // println!("Press Enter to proceed with program...");
+    // let mut input = String::new();
+    // std::io::stdin().read_line(&mut input).unwrap();
 
     // Now we will wait for the event to be signaled by the DLL
     let timeout: DWORD = 10000; 
@@ -707,6 +689,9 @@ fn main() {
             return;
         }
     };
+
+    unsafe { winapi::um::handleapi::CloseHandle(current_process_handle) };
+    unsafe { winapi::um::handleapi::CloseHandle(_file_mapping_handle) };
 
     // We now check if the event was signaled or if it timed out
     if wait_result {
