@@ -1,15 +1,16 @@
+#![allow(unused_assignments)]
 #[cfg(target_os = "windows")]
 extern crate winapi;
 
 use winapi::um::winuser::{MessageBoxW, MB_OK};
-use core::panic;
 use std::os::windows::ffi::OsStrExt;
 use std::ffi::{OsStr, CStr};
 use std::fmt;
 use std::iter::once;
 use std::ptr::null_mut;
 use winapi::shared::windef::HWND;
-use winapi::um::winbase::{lstrcpyA, OpenFileMappingA};
+use winapi::um::errhandlingapi::GetLastError;
+use winapi::um::winbase::OpenFileMappingA;
 use winapi::um::memoryapi::{MapViewOfFile, UnmapViewOfFile, FILE_MAP_ALL_ACCESS};
 use winapi::shared::minwindef::{UINT, HINSTANCE__};
 use winapi::um::winnt::{
@@ -20,7 +21,6 @@ use winapi::um::winnt::{
     IMAGE_OPTIONAL_HEADER,
     IMAGE_DATA_DIRECTORY,
     IMAGE_IMPORT_BY_NAME,
-    EVENT_MODIFY_STATE,
 };
 
 
@@ -52,7 +52,6 @@ pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> 
         let target_module_name: &str = "USER32.dll";
         let target_function_name: &str = "MessageBoxA";
         let file_mapping_name: &str = "Local\\__AA__AA__";
-
         begin_hooking(target_module_name, target_function_name, file_mapping_name);
     }
     true
@@ -117,17 +116,11 @@ fn begin_hooking(target_module_name: &str, target_function_name: &str, file_mapp
             },
         };
 
-        let target_func_addr: usize = target_func_data.0;
+        let  _target_func_addr: usize = target_func_data.0;
         let target_func_addr_ptr: *mut usize = target_func_data.1;
 
         // Finally, we need the address of the hook function
         let hook_func_addr: usize = hook_func as usize;
-
-        // test_msgbox("", format!("IAT ENTRY: 0x{:X}\n TARGET FUNC ADDR: 0x{:X}\n HOOK FUNC ADDR: 0x{:X}", 
-        //     target_func_addr_ptr as usize, 
-        //     target_func_addr,
-        //     hook_func_addr,
-        // ).as_str());
 
         // Now that we have all the addresses we need, we can perform the hook
         perform_hook(target_func_addr_ptr, hook_func_addr);
@@ -282,61 +275,91 @@ fn perform_hook(target_func_addr: *mut usize, hook_func_addr: usize) {
 
 // This function will open the file mapping created by the injector process
 // It will create a view of the file mapping, retrieve the pointer to the Event object, and set the Event
-fn set_event(file_mapping_name: &str) -> Result<(), winapi::shared::minwindef::DWORD> {
-    unsafe {
-        // Open the file mapping
-        if file_mapping_name.contains('\0') {
-            return Err(0x108);  // Replace with an appropriate error code
-        }
-        let c_file_mapping_name = std::ffi::CString::new(file_mapping_name).unwrap();
-        let mut file_mapping_handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, 0, c_file_mapping_name.as_ptr());
+fn set_event(file_mapping_name: &str) -> std::io::Result<()> {
+    // To store error messages
+    let err_msg: String;
 
+    // Check if the file mapping name is valid
+    if file_mapping_name.is_empty() || file_mapping_name.contains('\0') {
+        return Err(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid file mapping name."));
+    }
+
+    unsafe {
+        // Convert the file mapping name to a C-style string
+        let c_file_mapping_name = std::ffi::CString::new(file_mapping_name).unwrap();
+
+        // Open the file mapping
+        let mut file_mapping_handle = OpenFileMappingA(FILE_MAP_ALL_ACCESS, 0, c_file_mapping_name.as_ptr());
         if file_mapping_handle.is_null() {
-            test_msgbox("Failed to open file mapping", "");
-            return Err(winapi::um::errhandlingapi::GetLastError());
+            err_msg = format!("Failed to open file mapping. Windows error code: {}", GetLastError());
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, err_msg.as_str()));
         } 
 
         // Create a view of the file mapping
         let file_view_ptr = MapViewOfFile(file_mapping_handle, FILE_MAP_ALL_ACCESS, 0, 0, 0);
-
         if file_view_ptr.is_null() {
+            // If the view creation fails, close the file mapping handle and return an error
             winapi::um::handleapi::CloseHandle(file_mapping_handle);
             file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
-            test_msgbox("Failed to create view of file mapping", "");
-            return Err(winapi::um::errhandlingapi::GetLastError());
+            err_msg = format!("Failed to create view of file mapping. Windows error code: {}", GetLastError());
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, err_msg));
         }
 
-        // Read the event handle from the file mapping
+        // Retrieve the Event handle from the file mapping
         let mut event_handle = *(file_view_ptr as *mut winapi::um::winnt::HANDLE);
-        let last_error = winapi::um::errhandlingapi::GetLastError();
-        if last_error != 0 || event_handle.is_null() {
-            test_msgbox("Failed to read event handle from file mapping", "");
-            return Err(last_error);
+
+        // Unmap the view of the file mapping
+        let result = UnmapViewOfFile(file_view_ptr);
+        if result == 0 {
+            // If the unmap fails, close the file mapping handle and return an error
+            winapi::um::handleapi::CloseHandle(file_mapping_handle);
+            file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
+            err_msg = format!("Failed to unmap view of file mapping. Windows error code: {}", GetLastError());
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, err_msg));
         }
 
-        // Unmap view of file
-        UnmapViewOfFile(file_view_ptr);
+        if event_handle.is_null() {
+            // If the Event handle is null, close the file mapping handle and return an error
+            winapi::um::handleapi::CloseHandle(file_mapping_handle);
+            file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
+            err_msg = format!("Event handle retrieved from file mapping is null.");
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, err_msg.as_str()));
+        }
 
-        // Close the handle to the file mapping
-        winapi::um::handleapi::CloseHandle(file_mapping_handle);
-        file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
+        // Close the file mapping handle
+        let result = winapi::um::handleapi::CloseHandle(file_mapping_handle);
+        if result == 0 {
+            // If the close fails, return an error
+            file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
+            err_msg = format!("Failed to close file mapping handle. Windows error code: {}", GetLastError());
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, err_msg.as_str()));
+        } else {
+            // If the close succeeds, set the file mapping handle to INVALID_HANDLE_VALUE
+            file_mapping_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
+        }
 
-        // Set the event
-        let success = winapi::um::synchapi::SetEvent(event_handle);
+        // Set the Event
+        if winapi::um::synchapi::SetEvent(event_handle) == 0 {
+            err_msg = format!("Failed to set event. Windows error code: {}", GetLastError());
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, err_msg.as_str()));
+        }
 
-        if success == 0 {
-            winapi::um::handleapi::CloseHandle(event_handle);
+        // Close the Event handle
+        let result = winapi::um::handleapi::CloseHandle(event_handle);
+        if result == 0 {
+            // If the close fails, return an error
             event_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
-            return Err(winapi::um::errhandlingapi::GetLastError());
+            err_msg = format!("Failed to close event handle. Windows error code: {}", GetLastError());
+            return Err(std::io::Error::new(std::io::ErrorKind::Other, err_msg.as_str()));
+        } else {
+            // If the close succeeds, set the event handle to INVALID_HANDLE_VALUE
+            event_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
         }
-
-        // Close the event handle
-        winapi::um::handleapi::CloseHandle(event_handle);
-        event_handle = winapi::um::handleapi::INVALID_HANDLE_VALUE;
     }
 
     Ok(())
 }
+
 
 
 #[no_mangle]
