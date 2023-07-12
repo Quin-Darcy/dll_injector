@@ -730,8 +730,8 @@ fn main() {
     };
 
     // Now we will wait for the event to be signaled by the DLL
-    let timeout: DWORD = 10000; 
-    let attempts: usize = 6;
+    let timeout: DWORD = 1000; 
+    let attempts: usize = 5;
     let wait_result = match wait_for_event(event_handle, timeout, attempts) {
         Ok(wait_result) => wait_result,
         Err(e) => {
