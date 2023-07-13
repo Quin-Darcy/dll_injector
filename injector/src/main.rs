@@ -330,8 +330,8 @@ fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str, source_pro
     info!("[{}] Target process handle: {:?}", "create_file_mapping", target_process_handle);
 
     info!("[{}] Converting file mapping name to CString", "create_file_mapping");
-    let map_name: CString = std::ffi::CString::new(file_mapping_name);
-    
+    let map_name: CString = std::ffi::CString::new(file_mapping_name).unwrap();
+
     let mut duplicated_handle: HANDLE = std::ptr::null_mut();
 
     unsafe {
