@@ -1,0 +1,10 @@
+01:56:57 [WARN] [main] DLL did not set event: Timed out
+01:56:57 [INFO] [cleanup] Resuming target process
+01:56:57 [INFO] [cleanup] Target process: hProcess = 0x104, hThread = 0x100, dwProcessId = 8292, dwThreadId = 8660
+01:56:57 [INFO] [cleanup] Successfully resumed main thread of target process
+01:56:57 [INFO] [cleanup] Freeing allocated memory at address: 0xc0000
+01:56:57 [INFO] [cleanup] Allocated memory at address: 0xc0000 freed successfully
+01:56:57 [INFO] [cleanup] Closing handle to thread: 0x11c
+01:56:57 [INFO] [cleanup] Waiting for thread: 0x11c to finish execution
+01:56:59 [INFO] [cleanup] Thread with handle: 0x11c has finished execution
+01:56:59 [INFO] [cleanup] Handle to thread: 0x11c closed successfully
