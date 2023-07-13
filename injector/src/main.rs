@@ -323,8 +323,15 @@ fn create_event() -> Result<HANDLE, DWORD> {
 // in the current process using MapViewOfFile. It will then write the handle to the Event object into the file mapping.
 // It then unmaps the view of the file mapping from the current process and then returns the handle to the file mapping object.
 fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str, source_process_handle: HANDLE, target_process_handle: HANDLE) -> Result<HANDLE, DWORD> {
-    println!("Creating file mapping object in current process...");
-    let map_name: CString = std::ffi::CString::new(file_mapping_name).unwrap();
+    info!("[{}] Creating file mapping object", "create_file_mapping");
+    info!("[{}] Event handle: {:?}", "create_file_mapping", event_handle);
+    info!("[{}] File mapping name: {}", "create_file_mapping", file_mapping_name);
+    info!("[{}] Source process handle: {:?}", "create_file_mapping", source_process_handle);
+    info!("[{}] Target process handle: {:?}", "create_file_mapping", target_process_handle);
+
+    info!("[{}] Converting file mapping name to CString", "create_file_mapping");
+    let map_name: CString = std::ffi::CString::new(file_mapping_name);
+    
     let mut duplicated_handle: HANDLE = std::ptr::null_mut();
 
     unsafe {
@@ -400,7 +407,7 @@ fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str, source_pro
 // using the LoadLibraryA function whose address we obtained above
 // The return value is the handle to the newly created thread
 fn create_remote_thread(process_info: PROCESS_INFORMATION, load_library: FARPROC, dll_path_ptr: LPVOID) -> Result<HANDLE, DWORD> {
-    println!("Creating remote thread in target process...");
+    info!("[{}] Creating remote thread in target process - Target process handle: {:?}, Pointer to LoadLibraryA: {:?}, Pointer to DLL path: {:?}", "create_remote_thread", process_info.hProcess, load_library, dll_path_ptr);
     let remote_thread_handle = unsafe {
         CreateRemoteThread(
             process_info.hProcess,
@@ -413,34 +420,45 @@ fn create_remote_thread(process_info: PROCESS_INFORMATION, load_library: FARPROC
         )
     };
     if remote_thread_handle.is_null() {
-        Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
+        error!("[{}] Remote thread handle is null", "create_remote_thread");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "create_remote_thread", win_err);
+        }
+        return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
     } else {
-        println!("    Remote thread created successfully!");
-        println!("        Thread ID: {:?}\n", remote_thread_handle);
-        Ok(remote_thread_handle)
+        info!("[{}] Remote thread create successfully", "create_remote_thread");
+        info!("[{}] Handle to remote thread: {:?}", "create_remote_thread", remote_thread_handle);
+        return Ok(remote_thread_handle);
     }
 }
 
 // This function will use WaitForSingleObject to wait for the Event object to be signaled
 // It receives a timeout value as an argument which is the amount of time to wait for the Event object to be signaled
 fn wait_for_event(event_handle: HANDLE, timeout: DWORD, mut attempts: usize) -> Result<bool, DWORD> {
-    println!("Waiting for DLL to signal event...");
+    info!("[{}] Waiting for DLL to signal event - Event Handle: {:?}, Max Attempts: {}, Max Timeout: {}ms", "wait_for_event", event_handle, attempts, timeout);
+
+    let max_attempts: usize = attempts;
 
     while attempts > 0 {
         let wait_result = unsafe { winapi::um::synchapi::WaitForSingleObject(event_handle, timeout) };
-
         match wait_result {
             WAIT_OBJECT_0 => {
-                println!("    DLL signaled event!");
+                info!("[{}] DLL signaled event - Attempt: {}", "wait_for_event", max_attempts-attempts);
                 return Ok(true)
             },
             WAIT_TIMEOUT => {
                 attempts -= 1;
             },
-            _ => return Err(unsafe { winapi::um::errhandlingapi::GetLastError() }),
+            _ => {
+                error!("[{}] Call to WaitForSingleObject failed - Attempt: {}", "wait_for_event", max_attempts-attempts);
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "wait_for_event", win_err);
+                }
+                return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+            },
         }
     }
-    println!("    Timed out waiting for DLL to signal event!");
+    warn!("[{}] Max attempts reached: {}", "wait_for_event", "Timed out");
     return Ok(false)
 }
 
@@ -541,80 +559,111 @@ fn cleanup(
 
     // Close the event handle
     if let Some(event_handle) = event_handle {
-        println!("Closing handle to event...");
+        info!("[{}] Closing event handle: {:?}", "cleanup", event_handle);
 
         // Check if the event is signaled before closing
+        info!("[{}] Checking if event: {:?} is signaled before closing", "cleanup", event_handle);
         let wait_result = unsafe { winapi::um::synchapi::WaitForSingleObject(event_handle, 0) };
 
         match wait_result {
             WAIT_OBJECT_0 => {
-                println!("    Event is already signaled!");
+                info!("[{}] Event: {:?} is signaled", "cleanup", event_handle)
             },
             WAIT_TIMEOUT => {
-                println!("    Event is not signaled yet.");
+                warn!("[{}] Event: {:?} is not signaled yet", "cleanup", event_handle)
             },
-            _ => println!("    An error occurred while checking the event state."),
+            _ => {
+                error!("[{}] An error occurred while checking event: {:?}", "cleanup", event_handle);
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
+            }
         }
 
         if event_handle != winapi::um::handleapi::INVALID_HANDLE_VALUE {
             let success = unsafe { winapi::um::handleapi::CloseHandle(event_handle) };
             if success == 0 {
-                println!("    Failed to close event handle!\n");
+                error!("[{}] Failed to close event handle: {:?}", "cleanup", event_handle);
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
             } else {
-                println!("    Event handle closed successfully!\n");
+                info!("[{}] Event handle: {:?} closed successfully", "cleanup", event_handle);
             }
+        } else {
+            warn!("[{}] Event handle: {:?} is invalid", "cleanup", event_handle);
         }
     }
 
     // Close the handle to the file mapping object
     if let Some(file_mapping_handle) = file_mapping_handle {
+        info!("[{}] Closing file mapping object handle: {:?}", "cleanup", file_mapping_handle);
         if file_mapping_handle != winapi::um::handleapi::INVALID_HANDLE_VALUE {
-            println!("Closing handle to file mapping object...");
             let success = unsafe { winapi::um::handleapi::CloseHandle(file_mapping_handle) };
             if success == 0 {
-                println!("    Failed to close handle to file mapping object!\n");
+                error!("[{}] Failed to close file mapping object handle: {:?}", "cleanup", file_mapping_handle);
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
             } else {
-                println!("    Handle to file mapping object closed successfully!\n");
+                info!("[{}] File mapping object handle: {:?} closed successfully", "cleanup", file_mapping_handle);
             }
+        } else {
+            warn!("[{}] File mapping object handle: {:?} is invalid", "cleanup", file_mapping_handle);
         }
     }
 
     // Close the handle to the current process
     if let Some(current_process_handle) = current_process_handle {
+        info!("[{}] Closing current process handle: {:?}", "cleanup", current_process_handle);
         if current_process_handle != winapi::um::handleapi::INVALID_HANDLE_VALUE {
-            println!("Closing handle to current process...");
             let success = unsafe { winapi::um::handleapi::CloseHandle(current_process_handle) };
             if success == 0 {
-                println!("    Failed to close handle to current process!\n");
+                error!("[{}] Failed to close current process handle: {:?}", "cleanup", current_process_handle);
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
             } else {
-                println!("    Handle to current process closed successfully!\n");
+                info!("[{}] Current process handle: {:?} closed successfully", "cleanup", current_process_handle);
             }
+        } else {
+            warn!("[{}] Current process handle: {:?} is invalid", "cleanup", current_process_handle);
         }
     }
 
     // Close the handle to the target process
     if let Some(pi) = pi {
+        info!("[{}] Closing target process handle: {:?}", "cleanup", pi.hProcess);
         if pi.hProcess != winapi::um::handleapi::INVALID_HANDLE_VALUE {
-            println!("Closing handle to process...");
             let success = unsafe { winapi::um::handleapi::CloseHandle(pi.hProcess) };
             if success == 0 {
-                println!("    Failed to close handle to process!\n");
+                error!("[{}] Failed to close target process handle: {:?}", "cleanup", pi.hProcess);
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
             } else {
-                println!("    Handle to process closed successfully!\n");
+                info!("[{}] Target process handle: {:?} closed successfully", "cleanup", pi.hProcess);
             }
+        } else {
+            warn!("[{}] Target process handle: {:?} is invalid", "cleanup", pi.hProcess);
         }
     }
 
     // Close the handle to the main thread of the target process
     if let Some(pi) = pi {
+        info!("[{}] Closing target process main thread handle: {:?}", "cleanup", pi.hThread);
         if pi.hThread != winapi::um::handleapi::INVALID_HANDLE_VALUE {
-            println!("Closing handle to main thread...");
             let success = unsafe { winapi::um::handleapi::CloseHandle(pi.hThread) };
             if success == 0 {
-                println!("    Failed to close handle to main thread!\n");
+                error!("[{}] Failed to close target process main thread handle: {:?}", "cleanup", pi.hThread);
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
             } else {
-                println!("    Handle to main thread closed successfully!\n");
+                info!("[{}] Target process main thread handle: {:?} closed successfully", "cleanup", pi.hThread);
             }
+        } else {
+            warn!("[{}] Target process main thread handle: {:?} is invalid", "cleanup", pi.hThread);
         }
     }
 }

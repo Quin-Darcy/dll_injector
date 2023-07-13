@@ -1,10 +1,27 @@
-01:56:57 [WARN] [main] DLL did not set event: Timed out
-01:56:57 [INFO] [cleanup] Resuming target process
-01:56:57 [INFO] [cleanup] Target process: hProcess = 0x104, hThread = 0x100, dwProcessId = 8292, dwThreadId = 8660
-01:56:57 [INFO] [cleanup] Successfully resumed main thread of target process
-01:56:57 [INFO] [cleanup] Freeing allocated memory at address: 0xc0000
-01:56:57 [INFO] [cleanup] Allocated memory at address: 0xc0000 freed successfully
-01:56:57 [INFO] [cleanup] Closing handle to thread: 0x11c
-01:56:57 [INFO] [cleanup] Waiting for thread: 0x11c to finish execution
-01:56:59 [INFO] [cleanup] Thread with handle: 0x11c has finished execution
-01:56:59 [INFO] [cleanup] Handle to thread: 0x11c closed successfully
+03:07:10 [INFO] [create_remote_thread] Creating remote thread in target process - Target process pandle: 0x104, Pointer to LoadLibraryA: 0x771a1270, Pointer to DLL path: 0xc0000
+03:07:10 [INFO] [create_remote_thread] Remote thread create successfully
+03:07:10 [INFO] [create_remote_thread] Handle to remote thread: 0x12c
+03:07:10 [INFO] [wait_for_event] Waiting for DLL to signal event - Event Handle: 0x124, Max Attempts: 5, Max Timeout: 1000ms
+03:07:15 [WARN] [wait_for_event] Max attempts reached: Timed out
+03:07:15 [WARN] [main] DLL did not set event: Timed out
+03:07:15 [INFO] [cleanup] Resuming target process
+03:07:15 [INFO] [cleanup] Target process: hProcess = 0x104, hThread = 0x100, dwProcessId = 3512, dwThreadId = 8212
+03:07:15 [INFO] [cleanup] Successfully resumed main thread of target process
+03:07:15 [INFO] [cleanup] Freeing allocated memory at address: 0xc0000
+03:07:15 [INFO] [cleanup] Allocated memory at address: 0xc0000 freed successfully
+03:07:15 [INFO] [cleanup] Closing handle to thread: 0x12c
+03:07:15 [INFO] [cleanup] Waiting for thread: 0x12c to finish execution
+03:07:15 [INFO] [cleanup] Thread with handle: 0x12c has finished execution
+03:07:15 [INFO] [cleanup] Handle to thread: 0x12c closed successfully
+03:07:15 [INFO] [cleanup] Closing event handle: 0x124
+03:07:15 [INFO] [cleanup] Checking if event: 0x124 is signaled before closing
+03:07:15 [WARN] [cleanup] Event: 0x124 is not signaled yet
+03:07:15 [INFO] [cleanup] Event handle: 0x124 closed successfully
+03:07:15 [INFO] [cleanup] Closing file mapping object handle: 0x10c
+03:07:15 [INFO] [cleanup] File mapping object handle: 0x10c closed successfully
+03:07:15 [INFO] [cleanup] Closing current process handle: 0xffffffff
+03:07:15 [WARN] [cleanup] Current process handle: 0xffffffff is invalid
+03:07:15 [INFO] [cleanup] Closing target process handle: 0x104
+03:07:15 [INFO] [cleanup] Target process handle: 0x104 closed successfully
+03:07:15 [INFO] [cleanup] Closing target process main thread handle: 0x100
+03:07:15 [INFO] [cleanup] Target process main thread handle: 0x100 closed successfully
