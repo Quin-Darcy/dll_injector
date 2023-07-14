@@ -10,3 +10,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 winapi = { version = "0.3.9", features = ["processthreadsapi", "winbase", "winnt", "synchapi", "handleapi", "errhandlingapi", "memoryapi", "libloaderapi", "wow64apiset", "psapi", "winuser"] }
+log = "0.4.19"
+simplelog = "0.12.1"

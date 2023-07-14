@@ -23,6 +23,13 @@ use winapi::um::winnt::{
     IMAGE_IMPORT_BY_NAME,
 };
 
+extern crate simplelog;
+extern crate log;
+
+use log::{info, warn, error};
+use simplelog::*;
+use std::fs::File;
+
 
 #[derive(Debug)]
 enum ParseError {
@@ -49,9 +56,25 @@ impl fmt::Display for ParseError {
 #[no_mangle]
 pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> bool {
     if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
+        // Initialize the logger
+        match File::create("C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\launcher\\dll.log") {
+            Ok(file) => {
+                let _ = WriteLogger::init(LevelFilter::Info, Config::default(), file)
+                    .expect("Failed to initialize logger");
+            },
+            Err(_) => {
+                test_msgbox("UH ", "OH");
+                return false;
+            }
+        };
+
         let target_module_name: &str = "USER32.dll";
         let target_function_name: &str = "MessageBoxA";
         let file_mapping_name: &str = "Local\\__AA__AA__";
+        info!("[{}] Beginning hooking", "DllMain");
+        info!("Target module: {}", target_module_name);
+        info!("Target function: {}", target_function_name);
+        info!("File mapping name: {}", file_mapping_name);
         begin_hooking(target_module_name, target_function_name, file_mapping_name);
     }
     true
