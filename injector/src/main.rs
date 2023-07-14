@@ -54,7 +54,8 @@ fn create_process(target_process: &str) -> Result<PROCESS_INFORMATION, DWORD> {
     // handle, thread handle, and identification information.
     let mut pi: PROCESS_INFORMATION = unsafe { std::mem::zeroed() };
 
-    println!("Creating process...");
+    info!("[{}] Creating target process in suspended state", "create_process");
+    info!("[{}] Process path: {}", "create_process", target_process);
 
     // Create the target process in a suspended state
     let success = unsafe {
@@ -73,11 +74,18 @@ fn create_process(target_process: &str) -> Result<PROCESS_INFORMATION, DWORD> {
     };
 
     if success == 0 {
+        error!("[{}] Failed to create target process", "create_process");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "create_process", win_err);
+        }
         Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
     } else {
-        println!("    Process successfully created in suspended state!");
-        println!("        Process ID: {}", pi.dwProcessId);
-        println!("        Thread ID: {}\n", pi.dwThreadId);
+        info!("[{}] Successfully created target process in suspended state", "create_process");
+        info!("[{}] Handle to target process: {:?}", "create_process", pi.hProcess);
+        info!("[{}] Handle to target thread: {:?}", "create_process", pi.hThread);
+        info!("[{}] Target process ID: {}", "create_process", pi.dwProcessId);
+        info!("[{}] Target process main thread ID: {}", "create_process", pi.dwThreadId);
+
         Ok(pi)
     }
 }
@@ -89,9 +97,13 @@ fn create_process(target_process: &str) -> Result<PROCESS_INFORMATION, DWORD> {
 // We will need to specify the type of memory protection to use, which is read, write, and execute
 // The return value is the base address of the allocated region of pages
 fn allocate_memory(pi: PROCESS_INFORMATION, dll_path: &str) -> Result<*mut c_void, DWORD> {
-    println!("Allocating memory in target process...");
+    info!("[{}] Converting {} to CString", "allocate_memory", dll_path);
     let dll_path_c = CString::new(dll_path).unwrap();
+    info!("[{}] Converted DLL path: {:?}", "allocate_memory", dll_path_c);
+
     let dll_path_ptr = unsafe {
+        info!("[{}] Allocating memory in target process", "allocate_memory");
+        info!("[{}] Target process handle: {:?}", "allocate_memory", pi.hProcess);
         VirtualAllocEx(
             pi.hProcess,
             null_mut(),
@@ -102,11 +114,15 @@ fn allocate_memory(pi: PROCESS_INFORMATION, dll_path: &str) -> Result<*mut c_voi
     };
 
     if dll_path_ptr.is_null() {
+        error!("[{}] Failed to allocate memory in target process", "allocate_memory");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "allocate_memory", win_err);
+        }
         Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
     } else {
-        println!("    Memory successfully allocated in target process!");
-        println!("        Memory allocated at address: {:p}", dll_path_ptr);
-        println!("        Memory allocated: {} bytes\n", dll_path_c.as_bytes_with_nul().len());
+        info!("[{}] Successfully allocated memory into target process", "allocate_memory");
+        info!("[{}] Base address of allocated memory: {:?}", "allocate_memory", dll_path_ptr);
+        info!("[{}] Size of allocated memory: {} bytes", "allocate_memory", dll_path_c.as_bytes_with_nul().len());
         Ok(dll_path_ptr)
     }
 }
@@ -115,11 +131,16 @@ fn allocate_memory(pi: PROCESS_INFORMATION, dll_path: &str) -> Result<*mut c_voi
 // It will accept the process handle, the base address of the allocated memory, and the DLL path
 // It will return a boolean value indicating whether the DLL path was successfully written
 fn write_memory(process_handle: HANDLE, dll_path_ptr: *mut c_void, dll_path: &str) -> Result<bool, DWORD> {
-    println!("Writing DLL path to allocated memory...");
+    info!("[{}] Converting {} to CString", "write_memory", dll_path);
     let dll_path_c = CString::new(dll_path).unwrap();
+    info!("[{}] Converted DLL path: {:?}", "write_memory", dll_path_c);
+
     let mut bytes_written: usize = 0;
 
     let success = unsafe {
+        info!("[{}] Writing DLL path to allocated memory", "write_memory");
+        info!("[{}] Handle to target process: {:?}", "write_memory", process_handle);
+        info!("[{}] Base address of allocated memory: {:?}", "write_memory", dll_path_ptr);
         WriteProcessMemory(
             process_handle,
             dll_path_ptr,
@@ -130,10 +151,14 @@ fn write_memory(process_handle: HANDLE, dll_path_ptr: *mut c_void, dll_path: &st
     };
 
     if success == 0 {
+        error!("[{}] Failed to write {:?} to allocated memory!", "write_memory", dll_path_c);
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "write_memory", win_err);
+        }
         Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
     } else {
-        println!("    DLL path successfully written to allocated memory!");
-        println!("        Bytes written: {}\n", bytes_written);
+        info!("[{}] Successfully wrote {:?} to allocated memory!", "write_memory", dll_path_c);
+        info!("[{}] Bytes written: {}", "write_memory", bytes_written);
         Ok(true)
     }
 }
@@ -143,35 +168,53 @@ fn write_memory(process_handle: HANDLE, dll_path_ptr: *mut c_void, dll_path: &st
 // to get the address (relative to the base address) of the LoadLibraryA function
 // The function then subtracts the base address from the LoadLibraryA address to get the offset
 fn get_loadlib_offset() -> Result<usize, DWORD> {
-    println!("Getting offset of LoadLibraryA function...");
+    info!("[{}] Converting 'kernel32.dll' name to CString", "get_loadlib_offset");
     let module_str = CString::new("kernel32.dll").unwrap();
+    info!("[{}] Converted target module name: {:?}", "get_loadlib_offset", module_str);
+
+    info!("[{}] Converting 'LoadLibraryA' function name to CString", "get_loadlib_offset");
     let loadlib_str = CString::new("LoadLibraryA").unwrap();
+    info!("[{}] Converted target function name: {:?}", "get_loadlib_offset", loadlib_str);
+
     let loadlib_offset: usize;
 
     unsafe {
         // First we need to get the kernel32.dll module handle
+        info!("[{}] Retrieving handle to {:?} module", "get_loadlib_offset", module_str);
         let kernel32_handle = GetModuleHandleA(module_str.as_ptr());
 
         if kernel32_handle.is_null() {
-            println!("    Failed to get kernel32.dll module handle!");
+            error!("[{}] Failed to get {:?} module handle", "get_loadlib_offset", module_str);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "get_loadlib_offset", win_err);
+            }
             return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            info!("[{}] Successfully retrieved handle to {:?} module", "get_loadlib_offset", module_str);
+            info!("[{}] {:?} module handle: {:p}", "get_loadlib_offset", module_str, kernel32_handle);
         }
 
         // Next we need to get the relative address of the LoadLibraryA function
         // We can do this by calling the GetProcAddress function
+        info!("[{}] Retrieving address of {:?} function", "get_loadlib_offset", loadlib_str);
         let loadlib_ptr = GetProcAddress(kernel32_handle, loadlib_str.as_ptr());
 
         if loadlib_ptr.is_null() {
-            println!("    Failed to get address of LoadLibraryA function!");
+            error!("[{}] Failed to get address of {:?} function", "get_loadlib_offset", loadlib_str);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "get_loadlib_offset", win_err);
+            }
             return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            info!("[{}] Successfully retrieved address of {:?} function", "get_loadlib_offset", loadlib_str);
+            info!("[{}] {:?} function address: {:p}", "get_loadlib_offset", loadlib_str, loadlib_ptr);
         }
 
         // Calculate the offset of LoadLibraryA in kernel32.dll
         loadlib_offset = loadlib_ptr as usize - kernel32_handle as usize;
     }
+    info!("[{}] Calculated offset of {:?} function in {:?} module: 0x{:X}", "get_loadlib_offset", loadlib_str, module_str, loadlib_offset);
 
-    println!("    Offset of LoadLibraryA function successfully retrieved!");
-    println!("        Offset: 0x{:x}\n", loadlib_offset);
     Ok(loadlib_offset)
 }
 
@@ -185,6 +228,7 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
     let mut cb_needed: DWORD = 0;
 
     // This first call to EnumProcessModulesEx will set cb_needed to the correct value
+    info!("[{}] Calculating number of modules loaded by target process", "check_if_kernel32_loaded");
     let result = unsafe {
         EnumProcessModulesEx(
             process_handle,
@@ -196,17 +240,26 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
     };
 
     if result == 0 {
+        error!("[{}] Failed to calculate number of modules loaded by target process", "check_if_kernel32_loaded");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "check_if_kernel32_loaded", win_err);
+        }
         return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+    } else {
+        info!("[{}] Successfully caclulated number of modules loaded by target process", "check_if_kernel32_loaded");
     }
 
     // Calculate the number of modules loaded by the target process by dividing
     // the number of bytes needed by the size of a module handle
     let module_count = cb_needed / std::mem::size_of::<HMODULE>() as DWORD;
 
+    info!("[{}] Number of modules loaded by target process: {}", "check_if_kernel32_loaded", module_count);
+
     // Create a vector to store the module handles
     let mut h_mods: Vec<HMODULE> = vec![std::ptr::null_mut(); module_count as usize];
 
     // This second call to EnumProcessModulesEx will populate the vector with the module handles
+    info!("[{}] Getting handles of modules loaded by target process", "check_if_kernel32_loaded");
     let result = unsafe {
         EnumProcessModulesEx(
             process_handle,
@@ -218,6 +271,10 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
     };
 
     if result == 0 {
+        error!("[{}] Failed to get handles of modules loaded by target process", "check_if_kernel32_loaded");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "check_if_kernel32_loaded", win_err);
+        }
         return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
     }
 
@@ -227,6 +284,7 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
     // Iterate through the vector of module handles and check the name of each module
     // If the name matches the name of the module we are looking for, return the handle
     for i in 0..module_count {
+        info!("[{}] Retrieving name from module: {}", "check_if_kernel32_loaded", i);
         let result = unsafe {
             GetModuleBaseNameA(
                 process_handle,
@@ -237,12 +295,21 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
         };
 
         if result == 0 {
+            error!("[{}] Failed to retrieve name from module: {}", "check_if_kernel32_loaded", i);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "check_if_kernel32_loaded", win_err);
+            }
             return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+        } else {
+            info!("[{}] Successfully retrieved name from module: {}", "check_if_kernel32_loaded", i);
         }
 
         let name = unsafe { CStr::from_ptr(module_name.as_ptr() as LPCSTR) }.to_string_lossy().into_owned();
 
+        info!("[{}] Module name: {}", "check_if_kernel32_loaded", name);
+
         if name.eq_ignore_ascii_case("kernel32.dll") {
+            info!("[{}] Located matching module: {}", "check_if_kernel32_loaded", name);
             return Ok(h_mods[i as usize]);
         }
     }
@@ -252,10 +319,10 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
 
 // This is the main loop for checking if kernel32.dll has been loaded by the target process
 fn suspend_and_check_kernel32(process_info: PROCESS_INFORMATION) -> Result<HMODULE, DWORD> {
-    println!("Checking if kernel32.dll has been loaded...");
-
     // Check if kernel32.dll has been loaded by the target process
     // If it hasn't, then the function will return an error code
+    info!("[{}] Checking if kernel32.dll has been loaded by the target process", "suspend_and_check_kernel32");
+    info!("[{}] Target process handle: {:?}", "suspend_and_check_kernel32", process_info.hProcess);
     let mut kernel32_base_addr = check_if_kernel32_loaded(process_info.hProcess);
 
     // If an error code is returned, then we need to unsuspend the target process to give
@@ -264,57 +331,71 @@ fn suspend_and_check_kernel32(process_info: PROCESS_INFORMATION) -> Result<HMODU
     // has been loaded by the target process.
     while kernel32_base_addr.is_err() {
         // Unsuspend the target process
+        info!("[{}] Unsuspending target process", "suspend_and_check_kernel32");
         let resume_result: DWORD = unsafe { ResumeThread(process_info.hThread) };
 
         if resume_result == DWORD::MAX {
+            error!("[{}] Failed to unsuspend target process", "suspend_and_check_kernel32");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "suspend_and_check_kernel32", win_err);
+            }
             return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+        } else {
+            info!("[{}] Target process successfully unsuspended", "suspend_and_check_kernel32");
         }
 
         // Sleep for 1 millisecond to give the target process a chance to load kernel32.dll
+        info!("[{}] Target process sleeping for 1 millisecond", "suspend_and_check_kernel32");
         std::thread::sleep(std::time::Duration::from_millis(1));
         
         // Suspend the target process again
+        info!("[{}] Suspending target process", "suspend_and_check_kernel32");
         let suspend_result: DWORD = unsafe { SuspendThread(process_info.hThread) };
 
         if suspend_result == DWORD::MAX {
+            error!("[{}] Failed to suspend target process", "suspend_and_check_kernel32");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "suspend_and_check_kernel32", win_err);
+            }
             return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
         }
 
         // Check if kernel32.dll has been loaded by the target process
+        info!("[{}] Checking if kernel32.dll has been loaded by the target process", "suspend_and_check_kernel32");
         kernel32_base_addr = check_if_kernel32_loaded(process_info.hProcess);
     }
 
-    println!("    kernel32.dll has been loaded into target process!");
-    println!("        Base address: 0x{:x}\n", kernel32_base_addr.unwrap() as usize);
+    info!("[{}] kernel32.dll has been loaded by the target process", "suspend_and_check_kernel32");
+    info!("[{}] Base address of kernel32 in target process: 0x{:x}", "suspend_and_check_kernel32", kernel32_base_addr.unwrap() as usize);
+
     kernel32_base_addr
 }
 
 // This function will calculate the address of the LoadLibraryA function in the target process
 // by adding the offset of the LoadLibraryA function in kernel32.dll to the base address of kernel32.dll
 fn get_loadlib_addr(kernel32_base_addr: HMODULE, offset: usize) -> Result<*const c_void, DWORD> {
-    println!("Calculating address of LoadLibraryA function in target process...");
+    info!("[{}] Calculating address of LoadLibraryA function in target process", "get_loadlib_addr");
     let loadlib_addr_ptr = (kernel32_base_addr as usize + offset) as *const c_void;
-    println!("    Address of LoadLibraryA function in target process successfully calculated!");
-    println!("        Address: 0x{:x}\n", loadlib_addr_ptr as usize);
+    info!("[{}] Address of LoadLibraryA function in target process: 0x{:x}", "get_loadlib_addr", loadlib_addr_ptr as usize);
+
     Ok(loadlib_addr_ptr)
 } 
 
 // This function will create an Event object using CreateEventA and return the handle to the Event object
 fn create_event() -> Result<HANDLE, DWORD> {
-    println!("Creating Event object in target process...");
+    info!("[{}] Creating Event object", "create_event");
 
     let event_handle: *mut c_void = unsafe { winapi::um::synchapi::CreateEventA(null_mut(), 0, 0, null_mut()) };
     if event_handle.is_null() {
+        error!("[{}] Failed to create Event object", "create_event");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "create_event", win_err);
+        }
         return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+    } else {
+        info!("[{}] Event object created successfully", "create_event");
+        info!("[{}] Event handle: {:?}", "create_event", event_handle);
     }
-
-    let last_error = unsafe { winapi::um::errhandlingapi::GetLastError() };
-    if last_error != 0 {
-        return Err(last_error);
-    }
-
-    println!("    Event object created successfully!");
-    println!("        Event handle: {:?}\n", event_handle);
 
     Ok(event_handle)
 }
@@ -323,19 +404,30 @@ fn create_event() -> Result<HANDLE, DWORD> {
 // in the current process using MapViewOfFile. It will then write the handle to the Event object into the file mapping.
 // It then unmaps the view of the file mapping from the current process and then returns the handle to the file mapping object.
 fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str, source_process_handle: HANDLE, target_process_handle: HANDLE) -> Result<HANDLE, DWORD> {
-    info!("[{}] Creating file mapping object", "create_file_mapping");
-    info!("[{}] Event handle: {:?}", "create_file_mapping", event_handle);
-    info!("[{}] File mapping name: {}", "create_file_mapping", file_mapping_name);
-    info!("[{}] Source process handle: {:?}", "create_file_mapping", source_process_handle);
-    info!("[{}] Target process handle: {:?}", "create_file_mapping", target_process_handle);
-
     info!("[{}] Converting file mapping name to CString", "create_file_mapping");
-    let map_name: CString = std::ffi::CString::new(file_mapping_name).unwrap();
+    let map_name: CString = match std::ffi::CString::new(file_mapping_name) {
+        Ok(map_name) => {
+            info!("[{}] Successfully converted file mapping name: {:?} to CString", "create_file_mapping", map_name);
+            map_name
+        },
+        Err(_) => {
+            error!("[{}] Failed to convert file mapping name: {:?} to CString", "create_file_mapping", file_mapping_name);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "create_file_mapping", win_err);
+            }
+            return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+        }
+    };
 
+    // Duplicate the handle to the Event object so that it can be used in the target process
     let mut duplicated_handle: HANDLE = std::ptr::null_mut();
 
     unsafe {
-        // Duplicate the handle
+        info!("[{}] Duplicating event handle", "create_file_mapping");
+        info!("[{}] Source process handle: {:?}", "create_file_mapping", source_process_handle);
+        info!("[{}] Event handle: {:?}", "create_file_mapping", event_handle);
+        info!("[{}] Target process handle: {:?}", "create_file_mapping", target_process_handle);
+
         let duplication_success = winapi::um::handleapi::DuplicateHandle(
             source_process_handle,
             event_handle,
@@ -347,10 +439,19 @@ fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str, source_pro
         );
 
         if duplication_success == 0 {
+            error!("[{}] Failed to duplicate event handle: {:?}", "create_file_mapping", event_handle);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "create_file_mapping", win_err);
+            }
             return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            info!("[{}] Successfully duplicated event handle: {:?}", "create_file_mapping", event_handle);
+            info!("[{}] Duplicated event handle: {:?}", "create_file_mapping", duplicated_handle);
         }
 
         // Create a file mapping object
+        info!("[{}] Creating file mapping object", "create_file_mapping");
+
         let file_mapping_handle: *mut c_void = winapi::um::winbase::CreateFileMappingA(
             winapi::um::handleapi::INVALID_HANDLE_VALUE,
             std::ptr::null_mut(),
@@ -361,10 +462,19 @@ fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str, source_pro
         );
 
         if file_mapping_handle.is_null() {
+            error!("[{}] Failed to create file mapping object", "create_file_mapping");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "create_file_mapping", win_err);
+            }
             return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            info!("[{}] Successfully created file mapping object", "create_file_mapping");
+            info!("[{}] File mapping handle: {:?}", "create_file_mapping", file_mapping_handle);
         }
 
         // Create a view of the file mapping in the current process
+        info!("[{}] Creating view of file mapping in current process", "create_file_mapping");
+
         let file_view_ptr: *mut c_void = winapi::um::memoryapi::MapViewOfFile(
             file_mapping_handle,
             winapi::um::memoryapi::FILE_MAP_ALL_ACCESS,
@@ -374,29 +484,43 @@ fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str, source_pro
         );
 
         if file_view_ptr.is_null() {
+            error!("[{}] Failed to create view of file mapping in current process", "create_file_mapping");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "create_file_mapping", win_err);
+            }
             return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            info!("[{}] Successfully created view of file mapping in current process", "create_file_mapping");
+            info!("[{}] File view pointer: {:?}", "create_file_mapping", file_view_ptr);
         }
 
         // Write the duplicated event handle into the file mapping
+        info!("[{}] Writing duplicated event handle into file mapping", "create_file_mapping");
+        info!("[{}] Before writing, file view pointer: {:?}", "create_file_mapping", *(file_view_ptr as *mut HANDLE));
+
         *(file_view_ptr as *mut HANDLE) = duplicated_handle;
-        let last_error = winapi::um::errhandlingapi::GetLastError();
-        if last_error != 0 {
-            return Err(last_error);
-        }
-        winapi::um::memoryapi::UnmapViewOfFile(file_view_ptr);
-        let last_error = winapi::um::errhandlingapi::GetLastError();
-        if last_error != 0 {
-            return Err(last_error);
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "create_file_mapping", win_err);
+            return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            info!("[{}] Successfully wrote duplicated event handle into file mapping", "create_file_mapping");
+            info!("[{}] After writing, file view pointer: {:?}", "create_file_mapping", *(file_view_ptr as *mut HANDLE));
         }
 
         // Unmap the view of the file mapping as it's no longer needed in this process
-        winapi::um::memoryapi::UnmapViewOfFile(file_view_ptr);
+        info!("[{}] Unmapping view of file mapping in current process", "create_file_mapping");
 
-        println!("    File mapping object created successfully!");
-        println!("        File mapping handle: {:?}", file_mapping_handle);
-        println!("        File mapping name: {:?}", file_mapping_name);
-        println!("        Size of mapped file: {}\n", std::mem::size_of::<HANDLE>());        
-
+        let result = winapi::um::memoryapi::UnmapViewOfFile(file_view_ptr);
+        if result == 0 {
+            error!("[{}] Failed to unmap view of file mapping in current process", "create_file_mapping");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "create_file_mapping", win_err);
+            }
+            return Err(winapi::um::errhandlingapi::GetLastError());
+        } else {
+            info!("[{}] Successfully unmapped view of file mapping in current process", "create_file_mapping");
+        }
+       
         Ok(file_mapping_handle)
     }
 }
@@ -407,7 +531,11 @@ fn create_file_mapping(event_handle: HANDLE, file_mapping_name: &str, source_pro
 // using the LoadLibraryA function whose address we obtained above
 // The return value is the handle to the newly created thread
 fn create_remote_thread(process_info: PROCESS_INFORMATION, load_library: FARPROC, dll_path_ptr: LPVOID) -> Result<HANDLE, DWORD> {
-    info!("[{}] Creating remote thread in target process - Target process handle: {:?}, Pointer to LoadLibraryA: {:?}, Pointer to DLL path: {:?}", "create_remote_thread", process_info.hProcess, load_library, dll_path_ptr);
+    info!("[{}] Creating remote thread in target process", "create_remote_thread");
+    info!("[{}] Target process handle: {:?}", "create_remote_thread", process_info.hProcess);
+    info!("[{}] Pointer to LoadLibraryA: {:?}", "create_remote_thread", load_library);
+    info!("[{}] Pointer to DLL path: {:?}", "create_remote_thread", dll_path_ptr);
+
     let remote_thread_handle = unsafe {
         CreateRemoteThread(
             process_info.hProcess,
@@ -435,7 +563,10 @@ fn create_remote_thread(process_info: PROCESS_INFORMATION, load_library: FARPROC
 // This function will use WaitForSingleObject to wait for the Event object to be signaled
 // It receives a timeout value as an argument which is the amount of time to wait for the Event object to be signaled
 fn wait_for_event(event_handle: HANDLE, timeout: DWORD, mut attempts: usize) -> Result<bool, DWORD> {
-    info!("[{}] Waiting for DLL to signal event - Event Handle: {:?}, Max Attempts: {}, Max Timeout: {}ms", "wait_for_event", event_handle, attempts, timeout);
+    info!("[{}] Waiting for DLL to signal event", "wait_for_event");
+    info!("[{}] Event Handle: {:?}", "wait_for_event", event_handle);
+    info!("[{}] Timeout: {}ms", "wait_for_event", timeout);
+    info!("[{}] Max Attempts: {}", "wait_for_event", attempts);
 
     let max_attempts: usize = attempts;
 
@@ -476,8 +607,10 @@ fn cleanup(
         info!("[{}] Resuming target process", "cleanup");
     
         // Log some information about the PROCESS_INFORMATION struct
-        info!("[{}] Target process: hProcess = {:?}, hThread = {:?}, dwProcessId = {:?}, dwThreadId = {:?}", 
-              "cleanup", pi.hProcess, pi.hThread, pi.dwProcessId, pi.dwThreadId);
+        info!("[{}] Target process handle: {:?}", "cleanup", pi.hProcess);
+        info!("[{}] Target process main thread handle: {:?}", "cleanup", pi.hThread);
+        info!("[{}] Target process ID: {:?}", "cleanup", pi.dwProcessId);
+        info!("[{}] Target process main thread ID: {:?}", "cleanup", pi.dwThreadId);
     
         if pi.hProcess != winapi::um::handleapi::INVALID_HANDLE_VALUE {
             let mut suspend_count;
