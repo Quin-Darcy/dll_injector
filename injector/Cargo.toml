@@ -9,3 +9,4 @@ edition = "2021"
 winapi = { version = "0.3.9", features = ["processthreadsapi", "winbase", "winnt", "synchapi", "handleapi", "errhandlingapi", "memoryapi", "libloaderapi", "wow64apiset", "psapi", "securitybaseapi"] }
 log = "0.4.19"
 simplelog = "0.12.1"
+time = "0.3.23"

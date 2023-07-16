@@ -1,131 +1,122 @@
-05:14:04 [INFO] [create_process] Creating target process in suspended state
-05:14:04 [INFO] [create_process] Process path: C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\target.exe
-05:14:04 [INFO] [create_process] Successfully created target process in suspended state
-05:14:04 [INFO] [create_process] Handle to target process: 0x108
-05:14:04 [INFO] [create_process] Handle to target thread: 0x104
-05:14:04 [INFO] [create_process] Target process ID: 2336
-05:14:04 [INFO] [create_process] Target process main thread ID: 5392
-05:14:04 [INFO] [allocate_memory] Converting C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll32.dll to CString
-05:14:04 [INFO] [allocate_memory] Converted DLL path: "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll32.dll"
-05:14:04 [INFO] [allocate_memory] Allocating memory in target process
-05:14:04 [INFO] [allocate_memory] Target process handle: 0x108
-05:14:04 [INFO] [allocate_memory] Successfully allocated memory into target process
-05:14:04 [INFO] [allocate_memory] Base address of allocated memory: 0xc0000
-05:14:04 [INFO] [allocate_memory] Size of allocated memory: 74 bytes
-05:14:04 [INFO] [write_memory] Converting C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll32.dll to CString
-05:14:04 [INFO] [write_memory] Converted DLL path: "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll32.dll"
-05:14:04 [INFO] [write_memory] Writing DLL path to allocated memory
-05:14:04 [INFO] [write_memory] Handle to target process: 0x108
-05:14:04 [INFO] [write_memory] Base address of allocated memory: 0xc0000
-05:14:04 [INFO] [write_memory] Successfully wrote "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll32.dll" to allocated memory!
-05:14:04 [INFO] [write_memory] Bytes written: 74
-05:14:04 [INFO] [get_loadlib_offset] Converting 'kernel32.dll' name to CString
-05:14:04 [INFO] [get_loadlib_offset] Converted target module name: "kernel32.dll"
-05:14:04 [INFO] [get_loadlib_offset] Converting 'LoadLibraryA' function name to CString
-05:14:04 [INFO] [get_loadlib_offset] Converted target function name: "LoadLibraryA"
-05:14:04 [INFO] [get_loadlib_offset] Retrieving handle to "kernel32.dll" module
-05:14:04 [INFO] [get_loadlib_offset] Successfully retrieved handle to "kernel32.dll" module
-05:14:04 [INFO] [get_loadlib_offset] "kernel32.dll" module handle: 0x76b00000
-05:14:04 [INFO] [get_loadlib_offset] Retrieving address of "LoadLibraryA" function
-05:14:04 [INFO] [get_loadlib_offset] Successfully retrieved address of "LoadLibraryA" function
-05:14:04 [INFO] [get_loadlib_offset] "LoadLibraryA" function address: 0x76b21270
-05:14:04 [INFO] [get_loadlib_offset] Calculated offset of "LoadLibraryA" function in "kernel32.dll" module: 0x21270
-05:14:04 [INFO] [suspend_and_check_kernel32] Checking if kernel32.dll has been loaded by the target process
-05:14:04 [INFO] [suspend_and_check_kernel32] Target process handle: 0x108
-05:14:04 [INFO] [check_if_kernel32_loaded] Calculating number of modules loaded by target process
-05:14:04 [ERROR] [check_if_kernel32_loaded] Failed to calculate number of modules loaded by target process
-05:14:04 [ERROR] [check_if_kernel32_loaded] Windows error: Only part of a ReadProcessMemory or WriteProcessMemory request was completed.
+06:06:46.4943864 [INFO] [create_process] Creating target process in suspended state
+06:06:46.4944852 [INFO] [create_process] Process path: C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\target.exe
+06:06:46.4986818 [INFO] [create_process] Successfully created target process in suspended state
+06:06:46.4987242 [INFO] [create_process] Handle to target process: 0xd0
+06:06:46.4987616 [INFO] [create_process] Handle to target thread: 0xd4
+06:06:46.4987983 [INFO] [create_process] Target process ID: 6664
+06:06:46.4988371 [INFO] [create_process] Target process main thread ID: 6656
+06:06:46.4988765 [INFO] [allocate_memory] Converting C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll32.dll to CString
+06:06:46.498916 [INFO] [allocate_memory] Converted DLL path: "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll32.dll"
+06:06:46.4991189 [INFO] [allocate_memory] Allocating memory in target process
+06:06:46.4991525 [INFO] [allocate_memory] Target process handle: 0xd0
+06:06:46.4992156 [INFO] [allocate_memory] Successfully allocated memory into target process
+06:06:46.4992531 [INFO] [allocate_memory] Base address of allocated memory: 0xc0000
+06:06:46.4992915 [INFO] [allocate_memory] Size of allocated memory: 74 bytes
+06:06:46.4993323 [INFO] [write_memory] Converting C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll32.dll to CString
+06:06:46.4993799 [INFO] [write_memory] Converted DLL path: "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll32.dll"
+06:06:46.499584 [INFO] [write_memory] Writing DLL path to allocated memory
+06:06:46.499617 [INFO] [write_memory] Handle to target process: 0xd0
+06:06:46.499656 [INFO] [write_memory] Base address of allocated memory: 0xc0000
+06:06:46.4997056 [INFO] [write_memory] Successfully wrote "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll32.dll" to allocated memory!
+06:06:46.4999179 [INFO] [write_memory] Bytes written: 74
+06:06:46.4999529 [INFO] [get_loadlib_offset] Converting 'kernel32.dll' name to CString
+06:06:46.4999883 [INFO] [get_loadlib_offset] Converted target module name: "kernel32.dll"
+06:06:46.5000517 [INFO] [get_loadlib_offset] Converting 'LoadLibraryA' function name to CString
+06:06:46.5000845 [INFO] [get_loadlib_offset] Converted target function name: "LoadLibraryA"
+06:06:46.5001467 [INFO] [get_loadlib_offset] Retrieving handle to "kernel32.dll" module
+06:06:46.5002143 [INFO] [get_loadlib_offset] Successfully retrieved handle to "kernel32.dll" module
+06:06:46.500282 [INFO] [get_loadlib_offset] "kernel32.dll" module handle: 0x76b00000
+06:06:46.5003606 [INFO] [get_loadlib_offset] Retrieving address of "LoadLibraryA" function
+06:06:46.5004268 [INFO] [get_loadlib_offset] Successfully retrieved address of "LoadLibraryA" function
+06:06:46.5004919 [INFO] [get_loadlib_offset] "LoadLibraryA" function address: 0x76b21270
+06:06:46.5005602 [INFO] [get_loadlib_offset] Calculated offset of "LoadLibraryA" function in "kernel32.dll" module: 0x21270
+06:06:46.5007961 [INFO] [suspend_and_check_kernel32] Checking if kernel32.dll has been loaded by the target process
+06:06:46.5008502 [INFO] [suspend_and_check_kernel32] Target process handle: 0xd0
+06:06:46.5008875 [INFO] [check_if_kernel32_loaded] Calculating number of modules loaded by target process
+06:06:46.5009426 [ERROR] [check_if_kernel32_loaded] Failed to calculate number of modules loaded by target process
+06:06:46.5011733 [ERROR] [check_if_kernel32_loaded] Windows error: Only part of a ReadProcessMemory or WriteProcessMemory request was completed.
 
-05:14:04 [INFO] [suspend_and_check_kernel32] Unsuspending target process
-05:14:04 [INFO] [suspend_and_check_kernel32] Target process successfully unsuspended
-05:14:04 [INFO] [suspend_and_check_kernel32] Target process sleeping for 1 millisecond
-05:14:04 [INFO] [suspend_and_check_kernel32] Suspending target process
-05:14:04 [INFO] [suspend_and_check_kernel32] Checking if kernel32.dll has been loaded by the target process
-05:14:04 [INFO] [check_if_kernel32_loaded] Calculating number of modules loaded by target process
-05:14:04 [ERROR] [check_if_kernel32_loaded] Failed to calculate number of modules loaded by target process
-05:14:04 [ERROR] [check_if_kernel32_loaded] Windows error: Only part of a ReadProcessMemory or WriteProcessMemory request was completed.
-
-05:14:04 [INFO] [suspend_and_check_kernel32] Unsuspending target process
-05:14:04 [INFO] [suspend_and_check_kernel32] Target process successfully unsuspended
-05:14:04 [INFO] [suspend_and_check_kernel32] Target process sleeping for 1 millisecond
-05:14:04 [INFO] [suspend_and_check_kernel32] Suspending target process
-05:14:04 [INFO] [suspend_and_check_kernel32] Checking if kernel32.dll has been loaded by the target process
-05:14:04 [INFO] [check_if_kernel32_loaded] Calculating number of modules loaded by target process
-05:14:04 [INFO] [check_if_kernel32_loaded] Successfully caclulated number of modules loaded by target process
-05:14:04 [INFO] [check_if_kernel32_loaded] Number of modules loaded by target process: 14
-05:14:04 [INFO] [check_if_kernel32_loaded] Getting handles of modules loaded by target process
-05:14:04 [INFO] [check_if_kernel32_loaded] Retrieving name from module: 0
-05:14:04 [INFO] [check_if_kernel32_loaded] Successfully retrieved name from module: 0
-05:14:04 [INFO] [check_if_kernel32_loaded] Module name: target.exe
-05:14:04 [INFO] [check_if_kernel32_loaded] Retrieving name from module: 1
-05:14:04 [INFO] [check_if_kernel32_loaded] Successfully retrieved name from module: 1
-05:14:04 [INFO] [check_if_kernel32_loaded] Module name: ntdll.dll
-05:14:04 [INFO] [check_if_kernel32_loaded] Retrieving name from module: 2
-05:14:04 [INFO] [check_if_kernel32_loaded] Successfully retrieved name from module: 2
-05:14:04 [INFO] [check_if_kernel32_loaded] Module name: KERNEL32.DLL
-05:14:04 [INFO] [check_if_kernel32_loaded] Located matching module: KERNEL32.DLL
-05:14:04 [INFO] [suspend_and_check_kernel32] kernel32.dll has been loaded by the target process
-05:14:04 [INFO] [suspend_and_check_kernel32] Base address of kernel32 in target process: 0x76b00000
-05:14:04 [INFO] [get_loadlib_addr] Calculating address of LoadLibraryA function in target process
-05:14:04 [INFO] [get_loadlib_addr] Address of LoadLibraryA function in target process: 0x76b21270
-05:14:04 [INFO] [create_event] Creating Event object
-05:14:04 [INFO] [create_event] Event object created successfully
-05:14:04 [INFO] [create_event] Event handle: 0x120
-05:14:04 [INFO] [create_file_mapping] Converting file mapping name to CString
-05:14:04 [INFO] [create_file_mapping] Successfully converted file mapping name: "Local\\__AA__AA__" to CString
-05:14:04 [INFO] [create_file_mapping] Duplicating event handle
-05:14:04 [INFO] [create_file_mapping] Source process handle: 0xffffffff
-05:14:04 [INFO] [create_file_mapping] Event handle: 0x120
-05:14:04 [INFO] [create_file_mapping] Target process handle: 0x108
-05:14:04 [INFO] [create_file_mapping] Successfully duplicated event handle: 0x120
-05:14:04 [INFO] [create_file_mapping] Duplicated event handle: 0x110
-05:14:04 [INFO] [create_file_mapping] Creating file mapping object
-05:14:04 [INFO] [create_file_mapping] Successfully created file mapping object
-05:14:04 [INFO] [create_file_mapping] File mapping handle: 0x124
-05:14:04 [INFO] [create_file_mapping] Creating view of file mapping in current process
-05:14:04 [INFO] [create_file_mapping] Successfully created view of file mapping in current process
-05:14:04 [INFO] [create_file_mapping] File view pointer: 0x14b0000
-05:14:04 [INFO] [create_file_mapping] Writing duplicated event handle into file mapping
-05:14:04 [INFO] [create_file_mapping] Before writing, file view pointer: 0x0
-05:14:04 [INFO] [create_file_mapping] Successfully wrote duplicated event handle into file mapping
-05:14:04 [INFO] [create_file_mapping] After writing, file view pointer: 0x110
-05:14:04 [INFO] [create_file_mapping] Unmapping view of file mapping in current process
-05:14:04 [INFO] [create_file_mapping] Successfully unmapped view of file mapping in current process
-05:14:04 [INFO] [create_remote_thread] Creating remote thread in target process
-05:14:04 [INFO] [create_remote_thread] Target process handle: 0x108
-05:14:04 [INFO] [create_remote_thread] Pointer to LoadLibraryA: 0x76b21270
-05:14:04 [INFO] [create_remote_thread] Pointer to DLL path: 0xc0000
-05:14:04 [INFO] [create_remote_thread] Remote thread create successfully
-05:14:04 [INFO] [create_remote_thread] Handle to remote thread: 0x128
-05:14:04 [INFO] [wait_for_event] Waiting for DLL to signal event
-05:14:04 [INFO] [wait_for_event] Event Handle: 0x120
-05:14:04 [INFO] [wait_for_event] Timeout: 1000ms
-05:14:04 [INFO] [wait_for_event] Max Attempts: 5
-05:14:04 [INFO] [wait_for_event] DLL signaled event - Attempt: 0
-05:14:04 [INFO] [main] DLL successfully set event
-05:14:04 [INFO] [main] Resuming Target Process Main Thread
-05:14:04 [INFO] [main] Successfully resumed main thread of target process
-05:14:04 [INFO] [cleanup] Resuming target process
-05:14:04 [INFO] [cleanup] Target process handle: 0x108
-05:14:04 [INFO] [cleanup] Target process main thread handle: 0x104
-05:14:04 [INFO] [cleanup] Target process ID: 2336
-05:14:04 [INFO] [cleanup] Target process main thread ID: 5392
-05:14:04 [INFO] [cleanup] Successfully resumed main thread of target process
-05:14:04 [INFO] [cleanup] Freeing allocated memory at address: 0xc0000
-05:14:04 [INFO] [cleanup] Allocated memory at address: 0xc0000 freed successfully
-05:14:04 [INFO] [cleanup] Closing handle to thread: 0x128
-05:14:04 [INFO] [cleanup] Waiting for thread: 0x128 to finish execution
-05:14:04 [INFO] [cleanup] Thread with handle: 0x128 has finished execution
-05:14:04 [INFO] [cleanup] Handle to thread: 0x128 closed successfully
-05:14:04 [INFO] [cleanup] Closing event handle: 0x120
-05:14:04 [INFO] [cleanup] Checking if event: 0x120 is signaled before closing
-05:14:04 [WARN] [cleanup] Event: 0x120 is not signaled yet
-05:14:04 [INFO] [cleanup] Event handle: 0x120 closed successfully
-05:14:04 [INFO] [cleanup] Closing file mapping object handle: 0x124
-05:14:04 [INFO] [cleanup] File mapping object handle: 0x124 closed successfully
-05:14:04 [INFO] [cleanup] Closing current process handle: 0xffffffff
-05:14:04 [WARN] [cleanup] Current process handle: 0xffffffff is invalid
-05:14:04 [INFO] [cleanup] Closing target process handle: 0x108
-05:14:04 [INFO] [cleanup] Target process handle: 0x108 closed successfully
-05:14:04 [INFO] [cleanup] Closing target process main thread handle: 0x104
-05:14:04 [INFO] [cleanup] Target process main thread handle: 0x104 closed successfully
+06:06:46.5012338 [INFO] [suspend_and_check_kernel32] Unsuspending target process
+06:06:46.5012708 [INFO] [suspend_and_check_kernel32] Target process successfully unsuspended
+06:06:46.5013072 [INFO] [suspend_and_check_kernel32] Target process sleeping for 1 millisecond
+06:06:46.5169957 [INFO] [suspend_and_check_kernel32] Suspending target process
+06:06:46.5170558 [INFO] [suspend_and_check_kernel32] Checking if kernel32.dll has been loaded by the target process
+06:06:46.5170907 [INFO] [check_if_kernel32_loaded] Calculating number of modules loaded by target process
+06:06:46.5172052 [INFO] [check_if_kernel32_loaded] Successfully caclulated number of modules loaded by target process
+06:06:46.5172436 [INFO] [check_if_kernel32_loaded] Number of modules loaded by target process: 14
+06:06:46.5172803 [INFO] [check_if_kernel32_loaded] Getting handles of modules loaded by target process
+06:06:46.5173443 [INFO] [check_if_kernel32_loaded] Retrieving name from module: 0
+06:06:46.5173946 [INFO] [check_if_kernel32_loaded] Successfully retrieved name from module: 0
+06:06:46.5174338 [INFO] [check_if_kernel32_loaded] Module name: target.exe
+06:06:46.5174699 [INFO] [check_if_kernel32_loaded] Retrieving name from module: 1
+06:06:46.5175163 [INFO] [check_if_kernel32_loaded] Successfully retrieved name from module: 1
+06:06:46.5175539 [INFO] [check_if_kernel32_loaded] Module name: ntdll.dll
+06:06:46.5175894 [INFO] [check_if_kernel32_loaded] Retrieving name from module: 2
+06:06:46.5176384 [INFO] [check_if_kernel32_loaded] Successfully retrieved name from module: 2
+06:06:46.5176761 [INFO] [check_if_kernel32_loaded] Module name: KERNEL32.DLL
+06:06:46.5177118 [INFO] [check_if_kernel32_loaded] Located matching module: KERNEL32.DLL
+06:06:46.5177492 [INFO] [suspend_and_check_kernel32] kernel32.dll has been loaded by the target process
+06:06:46.5177832 [INFO] [suspend_and_check_kernel32] Base address of kernel32 in target process: 0x76b00000
+06:06:46.517819 [INFO] [get_loadlib_addr] Calculating address of LoadLibraryA function in target process
+06:06:46.5178531 [INFO] [get_loadlib_addr] Address of LoadLibraryA function in target process: 0x76b21270
+06:06:46.5178886 [INFO] [create_event] Creating Event object
+06:06:46.5179264 [INFO] [create_event] Event object created successfully
+06:06:46.5179629 [INFO] [create_event] Event handle: 0x10c
+06:06:46.5180013 [INFO] [create_file_mapping] Converting file mapping name to CString
+06:06:46.5180419 [INFO] [create_file_mapping] Successfully converted file mapping name: "Local\\__AA__AA__" to CString
+06:06:46.5181177 [INFO] [create_file_mapping] Duplicating event handle
+06:06:46.5181523 [INFO] [create_file_mapping] Source process handle: 0xffffffff
+06:06:46.518191 [INFO] [create_file_mapping] Event handle: 0x10c
+06:06:46.5182321 [INFO] [create_file_mapping] Target process handle: 0xd0
+06:06:46.5182738 [INFO] [create_file_mapping] Successfully duplicated event handle: 0x10c
+06:06:46.5183131 [INFO] [create_file_mapping] Duplicated event handle: 0x10c
+06:06:46.5183511 [INFO] [create_file_mapping] Creating file mapping object
+06:06:46.5184084 [INFO] [create_file_mapping] Successfully created file mapping object
+06:06:46.5184449 [INFO] [create_file_mapping] File mapping handle: 0xcc
+06:06:46.518484 [INFO] [create_file_mapping] Creating view of file mapping in current process
+06:06:46.5185248 [INFO] [create_file_mapping] Successfully created view of file mapping in current process
+06:06:46.5185589 [INFO] [create_file_mapping] File view pointer: 0x510000
+06:06:46.5185985 [INFO] [create_file_mapping] Writing duplicated event handle into file mapping
+06:06:46.5186322 [INFO] [create_file_mapping] Before writing, file view pointer: 0x0
+06:06:46.5186797 [INFO] [create_file_mapping] Successfully wrote duplicated event handle into file mapping
+06:06:46.5187139 [INFO] [create_file_mapping] After writing, file view pointer: 0x10c
+06:06:46.5187529 [INFO] [create_file_mapping] Unmapping view of file mapping in current process
+06:06:46.5187964 [INFO] [create_file_mapping] Successfully unmapped view of file mapping in current process
+06:06:46.5188351 [INFO] [create_remote_thread] Creating remote thread in target process
+06:06:46.5188698 [INFO] [create_remote_thread] Target process handle: 0xd0
+06:06:46.5189095 [INFO] [create_remote_thread] Pointer to LoadLibraryA: 0x76b21270
+06:06:46.5189491 [INFO] [create_remote_thread] Pointer to DLL path: 0xc0000
+06:06:46.5190408 [INFO] [create_remote_thread] Remote thread create successfully
+06:06:46.5190801 [INFO] [create_remote_thread] Handle to remote thread: 0x120
+06:06:46.5191189 [INFO] [wait_for_event] Waiting for DLL to signal event
+06:06:46.5191748 [INFO] [wait_for_event] Event Handle: 0x10c
+06:06:46.5192212 [INFO] [wait_for_event] Timeout: 1000ms
+06:06:46.5192613 [INFO] [wait_for_event] Max Attempts: 5
+06:06:46.5226643 [INFO] [wait_for_event] DLL signaled event - Attempt: 0
+06:06:46.5227037 [INFO] [main] DLL successfully set event
+06:06:46.5227389 [INFO] [main] Resuming Target Process Main Thread
+06:06:46.5227757 [INFO] [main] Successfully resumed main thread of target process
+06:06:46.522811 [INFO] [cleanup] Resuming target process
+06:06:46.522845 [INFO] [cleanup] Target process handle: 0xd0
+06:06:46.5228853 [INFO] [cleanup] Target process main thread handle: 0xd4
+06:06:46.5229229 [INFO] [cleanup] Target process ID: 6664
+06:06:46.5229603 [INFO] [cleanup] Target process main thread ID: 6656
+06:06:46.523 [INFO] [cleanup] Successfully resumed main thread of target process
+06:06:46.5230355 [INFO] [cleanup] Freeing allocated memory at address: 0xc0000
+06:06:46.5230908 [INFO] [cleanup] Allocated memory at address: 0xc0000 freed successfully
+06:06:46.5231373 [INFO] [cleanup] Closing handle to thread: 0x120
+06:06:46.5231824 [INFO] [cleanup] Waiting for thread: 0x120 to finish execution
+06:06:46.5232978 [INFO] [cleanup] Thread with handle: 0x120 has finished execution
+06:06:46.5233469 [INFO] [cleanup] Handle to thread: 0x120 closed successfully
+06:06:46.5233873 [INFO] [cleanup] Closing event handle: 0x10c
+06:06:46.5234263 [INFO] [cleanup] Checking if event: 0x10c is signaled before closing
+06:06:46.5234667 [WARN] [cleanup] Event: 0x10c is not signaled yet
+06:06:46.5235084 [INFO] [cleanup] Event handle: 0x10c closed successfully
+06:06:46.5235496 [INFO] [cleanup] Closing file mapping object handle: 0xcc
+06:06:46.523593 [INFO] [cleanup] File mapping object handle: 0xcc closed successfully
+06:06:46.5236469 [INFO] [cleanup] Closing current process handle: 0xffffffff
+06:06:46.5236847 [WARN] [cleanup] Current process handle: 0xffffffff is invalid
+06:06:46.5237262 [INFO] [cleanup] Closing target process handle: 0xd0
+06:06:46.5237661 [INFO] [cleanup] Target process handle: 0xd0 closed successfully
+06:06:46.5238058 [INFO] [cleanup] Closing target process main thread handle: 0xd4
+06:06:46.5238449 [INFO] [cleanup] Target process main thread handle: 0xd4 closed successfully

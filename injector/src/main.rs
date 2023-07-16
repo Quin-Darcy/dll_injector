@@ -3,9 +3,8 @@
 use std::ptr::null_mut;
 use std::ffi::{OsStr, CString, CStr, OsString};
 use std::iter::once;
-use std::os::windows::ffi::OsStrExt;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
-use std::os::windows::ffi::OsStringExt;
 
 use winapi::um::processthreadsapi::{CreateProcessW, CreateRemoteThread, ResumeThread, SuspendThread, STARTUPINFOW, PROCESS_INFORMATION};
 use winapi::um::winbase::CREATE_SUSPENDED;
@@ -24,6 +23,7 @@ extern crate log;
 use log::{info, warn, error};
 use simplelog::*;
 use std::fs::File;
+use time::macros::format_description;
 
 
 const WAIT_TIMEOUT: DWORD = 258;
@@ -829,7 +829,11 @@ fn get_last_error() -> Option<String> {
 
 fn main() {
     // Initialize the logger
-    let _ = WriteLogger::init(LevelFilter::Info, Config::default(), File::create("injector.log").expect("Failed to initialize logger"));
+    let config = ConfigBuilder::new()
+        .set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond]"))
+        .build();
+
+    let _ = WriteLogger::init(LevelFilter::Info, config, File::create("injector.log").expect("Failed to initialize logger"));
 
     // First, we will check if the user has provided the correct number of arguments
     let args: Vec<String> = std::env::args().collect();

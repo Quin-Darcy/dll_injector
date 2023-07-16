@@ -29,6 +29,7 @@ extern crate log;
 
 use log::{info, warn, error};
 use simplelog::*;
+use time::macros::format_description;
 use std::fs::File;
 
 
@@ -58,7 +59,10 @@ impl fmt::Display for ParseError {
 pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> bool {
     if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
         // Initialize the logger
-        let _ = WriteLogger::init(LevelFilter::Info, Config::default(), File::create("dll.log").expect("Failed to initialize logger"));
+        let config = ConfigBuilder::new()
+            .set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond]"))
+            .build();
+        let _ = WriteLogger::init(LevelFilter::Trace, config, File::create("dll.log").expect("Failed to initialize logger"));
 
         let target_module_name: &str = "USER32.dll";
         let target_function_name: &str = "MessageBoxA";
