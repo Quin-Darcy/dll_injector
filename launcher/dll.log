@@ -1,4 +1,69 @@
-04:49:59 [INFO] [DllMain] Beginning hooking
-04:49:59 [INFO] Target module: USER32.dll
-04:49:59 [INFO] Target function: MessageBoxA
-04:49:59 [INFO] File mapping name: Local\__AA__AA__
+05:14:04 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
+05:14:04 [INFO] [DllMain] Beginning hooking
+05:14:04 [INFO] [DllMain] Target module: USER32.dll
+05:14:04 [INFO] [DllMain] Target function: MessageBoxA
+05:14:04 [INFO] [DllMain] File mapping name: Local\__AA__AA__
+05:14:04 [INFO] [begin_hooking] Getting EXE base address
+05:14:04 [INFO] [get_exe_base_address] Calling GetModuleHandleA with null argument
+05:14:04 [INFO] [get_exe_base_address] Successfully retrieved handle
+05:14:04 [INFO] [get_exe_base_address] EXE base address: 0x400000
+05:14:04 [INFO] [begin_hooking] Successfully retrieved EXE base address
+05:14:04 [INFO] [begin_hooking] Getting import directory address
+05:14:04 [INFO] [get_import_directory_addr] Getting address of Import Directory
+05:14:04 [INFO] [get_import_directory_addr] Base address: 0x400000
+05:14:04 [INFO] [get_import_directory_addr] Address of IMAGE_DOS_HEADER: 0x400000
+05:14:04 [INFO] [get_import_directory_addr] Address of PE header: 0x400080
+05:14:04 [INFO] [get_import_directory_addr] Address of IMAGE_NT_HEADERS: 0x400080
+05:14:04 [INFO] [get_import_directory_addr] Address of IMAGE_OPTIONAL_HEADER: 0x400098
+05:14:04 [INFO] [get_import_directory_addr] Address of IMAGE_DATA_DIRECTORY: 0x400100
+05:14:04 [INFO] [get_import_directory_addr] Address of Import Directory: 0x408000
+05:14:04 [INFO] [begin_hooking] Locating addresses of IAT and INT in target module
+05:14:04 [INFO] [locate_iat_and_int] Import Directory address: 0x408000
+05:14:04 [INFO] [locate_iat_and_int] EXE base address: 0x400000
+05:14:04 [INFO] [locate_iat_and_int] Target module: USER32.dll
+05:14:04 [INFO] [locate_iat_and_int] Iterating through IMAGE_IMPORT_DESCRIPTOR structures
+05:14:04 [INFO] [locate_iat_and_int] Module name: KERNEL32.dll
+05:14:04 [INFO] [locate_iat_and_int] Module name: msvcrt.dll
+05:14:04 [INFO] [locate_iat_and_int] Module name: msvcrt.dll
+05:14:04 [INFO] [locate_iat_and_int] Module name: USER32.dll
+05:14:04 [INFO] [locate_iat_and_int] Target module found
+05:14:04 [INFO] [locate_iat_and_int] Address of Import Name Table (INT): 0x408150
+05:14:04 [INFO] [locate_iat_and_int] Address of Import Address Table (IAT): 0x40823C
+05:14:04 [INFO] [begin_hooking] Successfully located IAT and INT in target module
+05:14:04 [INFO] [begin_hooking] Getting address of target function
+05:14:04 [INFO] [get_func_address_in_iat] Retrieving address of function: MessageBoxA
+05:14:04 [INFO] [get_func_address_in_iat] Address of Import Name Table (INT): 0x408150
+05:14:04 [INFO] [get_func_address_in_iat] Address of Import Address Table (IAT): 0x40823C
+05:14:04 [INFO] [get_func_address_in_iat] EXE base address: 0x400000
+05:14:04 [INFO] [get_func_address_in_iat] Iterating through Import Name Table (INT) and Import Address Table (IAT)
+05:14:04 [INFO] [get_func_address_in_iat] Target function found: MessageBoxA
+05:14:04 [INFO] [get_func_address_in_iat] Function address: 0x76100E50
+05:14:04 [INFO] [begin_hooking] Successfully retrieved address of target function
+05:14:04 [INFO] [begin_hooking] Performing hook
+05:14:04 [INFO] [perform_hook] Performing hook
+05:14:04 [INFO] [perform_hook] Address of target function: 0x40823C
+05:14:04 [INFO] [perform_hook] Address of hook function: 0x75B651C0
+05:14:04 [INFO] [perform_hook] Value of target function address before hook: 0x76100E50
+05:14:04 [INFO] [perform_hook] Value of target function address after hook: 0x75B651C0
+05:14:04 [INFO] [begin_hooking] Signalling event
+05:14:04 [INFO] [set_event] Setting event
+05:14:04 [INFO] [set_event] File mapping name: Local\__AA__AA__
+05:14:04 [INFO] [set_event] Calling OpenFileMappingA
+05:14:04 [INFO] [set_event] File mapping opened successfully
+05:14:04 [INFO] [set_event] File mapping handle: 0x118
+05:14:04 [INFO] [set_event] Calling MapViewOfFile
+05:14:04 [INFO] [set_event] View of file mapping created successfully
+05:14:04 [INFO] [set_event] View of file mapping address: 0x6D0000
+05:14:04 [INFO] [set_event] Retrieving Event handle from file mapping
+05:14:04 [INFO] [set_event] Event handle: 0x110
+05:14:04 [INFO] [set_event] Calling UnmapViewOfFile
+05:14:04 [INFO] [set_event] View of file mapping unmapped successfully
+05:14:04 [INFO] [set_event] Closing file mapping handle
+05:14:04 [INFO] [set_event] File mapping handle closed successfully
+05:14:04 [INFO] [set_event] Setting file mapping handle to INVALID_HANDLE_VALUE
+05:14:04 [INFO] [set_event] Calling SetEvent
+05:14:04 [INFO] [set_event] Event set successfully
+05:14:04 [INFO] [set_event] Closing Event handle
+05:14:04 [INFO] [set_event] Event handle closed successfully
+05:14:04 [INFO] [set_event] Setting event handle to INVALID_HANDLE_VALUE
+05:14:04 [INFO] [begin_hooking] Successfully signalled event
