@@ -1,69 +1,69 @@
-06:06:46.5202365 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
-06:06:46.5203461 [INFO] [DllMain] Beginning hooking
-06:06:46.5203813 [INFO] [DllMain] Target module: USER32.dll
-06:06:46.5204167 [INFO] [DllMain] Target function: MessageBoxA
-06:06:46.520453 [INFO] [DllMain] File mapping name: Local\__AA__AA__
-06:06:46.520488 [INFO] [begin_hooking] Getting EXE base address
-06:06:46.5205218 [INFO] [get_exe_base_address] Calling GetModuleHandleA with null argument
-06:06:46.5205548 [INFO] [get_exe_base_address] Successfully retrieved handle
-06:06:46.5205898 [INFO] [get_exe_base_address] EXE base address: 0x400000
-06:06:46.5206299 [INFO] [begin_hooking] Successfully retrieved EXE base address
-06:06:46.5206667 [INFO] [begin_hooking] Getting import directory address
-06:06:46.5207008 [INFO] [get_import_directory_addr] Getting address of Import Directory
-06:06:46.5207349 [INFO] [get_import_directory_addr] Base address: 0x400000
-06:06:46.5207699 [INFO] [get_import_directory_addr] Address of IMAGE_DOS_HEADER: 0x400000
-06:06:46.5208065 [INFO] [get_import_directory_addr] Address of PE header: 0x400080
-06:06:46.5208466 [INFO] [get_import_directory_addr] Address of IMAGE_NT_HEADERS: 0x400080
-06:06:46.5208825 [INFO] [get_import_directory_addr] Address of IMAGE_OPTIONAL_HEADER: 0x400098
-06:06:46.5209187 [INFO] [get_import_directory_addr] Address of IMAGE_DATA_DIRECTORY: 0x400100
-06:06:46.5209545 [INFO] [get_import_directory_addr] Address of Import Directory: 0x408000
-06:06:46.5209913 [INFO] [begin_hooking] Locating addresses of IAT and INT in target module
-06:06:46.5210242 [INFO] [locate_iat_and_int] Import Directory address: 0x408000
-06:06:46.5210606 [INFO] [locate_iat_and_int] EXE base address: 0x400000
-06:06:46.5211019 [INFO] [locate_iat_and_int] Target module: USER32.dll
-06:06:46.5211382 [INFO] [locate_iat_and_int] Iterating through IMAGE_IMPORT_DESCRIPTOR structures
-06:06:46.5211752 [INFO] [locate_iat_and_int] Module name: KERNEL32.dll
-06:06:46.5212118 [INFO] [locate_iat_and_int] Module name: msvcrt.dll
-06:06:46.5212512 [INFO] [locate_iat_and_int] Module name: msvcrt.dll
-06:06:46.5212866 [INFO] [locate_iat_and_int] Module name: USER32.dll
-06:06:46.5213231 [INFO] [locate_iat_and_int] Target module found
-06:06:46.5213559 [INFO] [locate_iat_and_int] Address of Import Name Table (INT): 0x408150
-06:06:46.5213968 [INFO] [locate_iat_and_int] Address of Import Address Table (IAT): 0x40823C
-06:06:46.5214325 [INFO] [begin_hooking] Successfully located IAT and INT in target module
-06:06:46.5214674 [INFO] [begin_hooking] Getting address of target function
-06:06:46.5215002 [INFO] [get_func_address_in_iat] Retrieving address of function: MessageBoxA
-06:06:46.5215361 [INFO] [get_func_address_in_iat] Address of Import Name Table (INT): 0x408150
-06:06:46.521571 [INFO] [get_func_address_in_iat] Address of Import Address Table (IAT): 0x40823C
-06:06:46.5216086 [INFO] [get_func_address_in_iat] EXE base address: 0x400000
-06:06:46.5216434 [INFO] [get_func_address_in_iat] Iterating through Import Name Table (INT) and Import Address Table (IAT)
-06:06:46.5216857 [INFO] [get_func_address_in_iat] Target function found: MessageBoxA
-06:06:46.5217231 [INFO] [get_func_address_in_iat] Function address: 0x76100E50
-06:06:46.5217582 [INFO] [begin_hooking] Successfully retrieved address of target function
-06:06:46.5217919 [INFO] [begin_hooking] Performing hook
-06:06:46.5218253 [INFO] [perform_hook] Performing hook
-06:06:46.5218589 [INFO] [perform_hook] Address of target function: 0x40823C
-06:06:46.5218943 [INFO] [perform_hook] Address of hook function: 0x75B652C0
-06:06:46.5219312 [INFO] [perform_hook] Value of target function address before hook: 0x76100E50
-06:06:46.521967 [INFO] [perform_hook] Value of target function address after hook: 0x75B652C0
-06:06:46.5220028 [INFO] [begin_hooking] Signalling event
-06:06:46.5220359 [INFO] [set_event] Setting event
-06:06:46.5220695 [INFO] [set_event] File mapping name: Local\__AA__AA__
-06:06:46.5221099 [INFO] [set_event] Calling OpenFileMappingA
-06:06:46.522153 [INFO] [set_event] File mapping opened successfully
-06:06:46.5221883 [INFO] [set_event] File mapping handle: 0x118
-06:06:46.522249 [INFO] [set_event] Calling MapViewOfFile
-06:06:46.5222872 [INFO] [set_event] View of file mapping created successfully
-06:06:46.5223216 [INFO] [set_event] View of file mapping address: 0x3270000
-06:06:46.5223583 [INFO] [set_event] Retrieving Event handle from file mapping
-06:06:46.5223941 [INFO] [set_event] Event handle: 0x10C
-06:06:46.5224308 [INFO] [set_event] Calling UnmapViewOfFile
-06:06:46.5224716 [INFO] [set_event] View of file mapping unmapped successfully
-06:06:46.5225062 [INFO] [set_event] Closing file mapping handle
-06:06:46.5225483 [INFO] [set_event] File mapping handle closed successfully
-06:06:46.5225826 [INFO] [set_event] Setting file mapping handle to INVALID_HANDLE_VALUE
-06:06:46.52262 [INFO] [set_event] Calling SetEvent
-06:06:46.5229378 [INFO] [set_event] Event set successfully
-06:06:46.5230392 [INFO] [set_event] Closing Event handle
-06:06:46.5231299 [INFO] [set_event] Event handle closed successfully
-06:06:46.5231701 [INFO] [set_event] Setting event handle to INVALID_HANDLE_VALUE
-06:06:46.5232072 [INFO] [begin_hooking] Successfully signalled event
+07:55:41.2006822 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
+07:55:41.2008075 [INFO] [DllMain] Beginning hooking
+07:55:41.200839 [INFO] [DllMain] Target module: USER32.dll
+07:55:41.2008721 [INFO] [DllMain] Target function: MessageBoxA
+07:55:41.2009565 [INFO] [DllMain] File mapping name: Local\__AA__AA__
+07:55:41.2009905 [INFO] [begin_hooking] Getting EXE base address
+07:55:41.2010214 [INFO] [get_exe_base_address] Calling GetModuleHandleA with null argument
+07:55:41.2010838 [INFO] [get_exe_base_address] Successfully retrieved handle
+07:55:41.2011142 [INFO] [get_exe_base_address] EXE base address: 0x400000
+07:55:41.2011508 [INFO] [begin_hooking] Successfully retrieved EXE base address
+07:55:41.2011976 [INFO] [begin_hooking] Getting import directory address
+07:55:41.201228 [INFO] [get_import_directory_addr] Getting address of Import Directory
+07:55:41.201291 [INFO] [get_import_directory_addr] Base address: 0x400000
+07:55:41.2013243 [INFO] [get_import_directory_addr] Address of IMAGE_DOS_HEADER: 0x400000
+07:55:41.2014045 [INFO] [get_import_directory_addr] Address of PE header: 0x400080
+07:55:41.2014665 [INFO] [get_import_directory_addr] Address of IMAGE_NT_HEADERS: 0x400080
+07:55:41.2015209 [INFO] [get_import_directory_addr] Address of IMAGE_OPTIONAL_HEADER: 0x400098
+07:55:41.2015543 [INFO] [get_import_directory_addr] Address of IMAGE_DATA_DIRECTORY: 0x400100
+07:55:41.2016231 [INFO] [get_import_directory_addr] Address of Import Directory: 0x408000
+07:55:41.201658 [INFO] [begin_hooking] Locating addresses of IAT and INT in target module
+07:55:41.2016943 [INFO] [locate_iat_and_int] Import Directory address: 0x408000
+07:55:41.2017623 [INFO] [locate_iat_and_int] EXE base address: 0x400000
+07:55:41.2017989 [INFO] [locate_iat_and_int] Target module: USER32.dll
+07:55:41.2018691 [INFO] [locate_iat_and_int] Iterating through IMAGE_IMPORT_DESCRIPTOR structures
+07:55:41.2019046 [INFO] [locate_iat_and_int] Module name: KERNEL32.dll
+07:55:41.2019995 [INFO] [locate_iat_and_int] Module name: msvcrt.dll
+07:55:41.2020385 [INFO] [locate_iat_and_int] Module name: msvcrt.dll
+07:55:41.2020721 [INFO] [locate_iat_and_int] Module name: USER32.dll
+07:55:41.2021253 [INFO] [locate_iat_and_int] Target module found
+07:55:41.2021555 [INFO] [locate_iat_and_int] Address of Import Name Table (INT): 0x408150
+07:55:41.2022118 [INFO] [locate_iat_and_int] Address of Import Address Table (IAT): 0x40823C
+07:55:41.2022458 [INFO] [begin_hooking] Successfully located IAT and INT in target module
+07:55:41.2022886 [INFO] [begin_hooking] Getting address of target function
+07:55:41.2023209 [INFO] [get_func_address_in_iat] Retrieving address of function: MessageBoxA
+07:55:41.2023551 [INFO] [get_func_address_in_iat] Address of Import Name Table (INT): 0x408150
+07:55:41.2024061 [INFO] [get_func_address_in_iat] Address of Import Address Table (IAT): 0x40823C
+07:55:41.2024397 [INFO] [get_func_address_in_iat] EXE base address: 0x400000
+07:55:41.202501 [INFO] [get_func_address_in_iat] Iterating through Import Name Table (INT) and Import Address Table (IAT)
+07:55:41.2025355 [INFO] [get_func_address_in_iat] Target function found: MessageBoxA
+07:55:41.2025848 [INFO] [get_func_address_in_iat] Function address: 0x76100E50
+07:55:41.2026191 [INFO] [begin_hooking] Successfully retrieved address of target function
+07:55:41.2026506 [INFO] [begin_hooking] Performing hook
+07:55:41.2027182 [INFO] [perform_hook] Performing hook
+07:55:41.2027505 [INFO] [perform_hook] Address of target function: 0x40823C
+07:55:41.202787 [INFO] [perform_hook] Address of hook function: 0x715D52C0
+07:55:41.202836 [INFO] [perform_hook] Value of target function address before hook: 0x76100E50
+07:55:41.2028715 [INFO] [perform_hook] Value of target function address after hook: 0x715D52C0
+07:55:41.2029279 [INFO] [begin_hooking] Signalling event
+07:55:41.2029598 [INFO] [set_event] Setting event
+07:55:41.2029918 [INFO] [set_event] File mapping name: Local\__AA__AA__
+07:55:41.2030637 [INFO] [set_event] Calling OpenFileMappingA
+07:55:41.2031067 [INFO] [set_event] File mapping opened successfully
+07:55:41.2031741 [INFO] [set_event] File mapping handle: 0x11C
+07:55:41.2032394 [INFO] [set_event] Calling MapViewOfFile
+07:55:41.2033145 [INFO] [set_event] View of file mapping created successfully
+07:55:41.2033461 [INFO] [set_event] View of file mapping address: 0x6A0000
+07:55:41.2034241 [INFO] [set_event] Retrieving Event handle from file mapping
+07:55:41.2034576 [INFO] [set_event] Event handle: 0x110
+07:55:41.203623 [INFO] [set_event] Calling UnmapViewOfFile
+07:55:41.203667 [INFO] [set_event] View of file mapping unmapped successfully
+07:55:41.2042623 [INFO] [set_event] Closing file mapping handle
+07:55:41.2042962 [INFO] [set_event] File mapping handle closed successfully
+07:55:41.2043312 [INFO] [set_event] Setting file mapping handle to INVALID_HANDLE_VALUE
+07:55:41.2043783 [INFO] [set_event] Calling SetEvent
+07:55:41.204416 [INFO] [set_event] Event set successfully
+07:55:41.2044844 [INFO] [set_event] Closing Event handle
+07:55:41.2045228 [INFO] [set_event] Event handle closed successfully
+07:55:41.2045603 [INFO] [set_event] Setting event handle to INVALID_HANDLE_VALUE
+07:55:41.2046287 [INFO] [begin_hooking] Successfully signalled event

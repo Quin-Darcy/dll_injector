@@ -5,6 +5,7 @@ use std::ffi::{OsStr, CString, CStr, OsString};
 use std::iter::once;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
+use std::io::{self};
 
 use winapi::um::processthreadsapi::{CreateProcessW, CreateRemoteThread, ResumeThread, SuspendThread, STARTUPINFOW, PROCESS_INFORMATION};
 use winapi::um::winbase::CREATE_SUSPENDED;
@@ -223,12 +224,10 @@ fn get_loadlib_offset() -> Result<usize, DWORD> {
 // the vector and checks the name of each module against the name of the module we are
 // looking for. If the module is found, the function returns the handle of the module.
 // If the module is not found, the function returns an error code.
-fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
-    // cb_needed is the number of bytes required to store all the module handles
+fn check_if_target_mod_loaded(process_handle: HANDLE, target_module: &str) -> Result<HMODULE, DWORD> {
     let mut cb_needed: DWORD = 0;
 
-    // This first call to EnumProcessModulesEx will set cb_needed to the correct value
-    info!("[{}] Calculating number of modules loaded by target process", "check_if_kernel32_loaded");
+    info!("[{}] Calculating number of modules loaded by target process", "check_if_target_mod_loaded");
     let result = unsafe {
         EnumProcessModulesEx(
             process_handle,
@@ -240,26 +239,20 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
     };
 
     if result == 0 {
-        error!("[{}] Failed to calculate number of modules loaded by target process", "check_if_kernel32_loaded");
+        error!("[{}] Failed to calculate number of modules loaded by target process", "check_if_target_mod_loaded");
         if let Some(win_err) = get_last_error() {
-            error!("[{}] Windows error: {}", "check_if_kernel32_loaded", win_err);
+            error!("[{}] Windows error: {}", "check_if_target_mod_loaded", win_err);
         }
         return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
     } else {
-        info!("[{}] Successfully caclulated number of modules loaded by target process", "check_if_kernel32_loaded");
+        info!("[{}] Successfully calculated number of modules loaded by target process", "check_if_target_mod_loaded");
     }
 
-    // Calculate the number of modules loaded by the target process by dividing
-    // the number of bytes needed by the size of a module handle
     let module_count = cb_needed / std::mem::size_of::<HMODULE>() as DWORD;
-
-    info!("[{}] Number of modules loaded by target process: {}", "check_if_kernel32_loaded", module_count);
-
-    // Create a vector to store the module handles
+    info!("[{}] Number of modules loaded by target process: {}", "check_if_target_mod_loaded", module_count);
     let mut h_mods: Vec<HMODULE> = vec![std::ptr::null_mut(); module_count as usize];
 
-    // This second call to EnumProcessModulesEx will populate the vector with the module handles
-    info!("[{}] Getting handles of modules loaded by target process", "check_if_kernel32_loaded");
+    info!("[{}] Getting handles of modules loaded by target process", "check_if_target_mod_loaded");
     let result = unsafe {
         EnumProcessModulesEx(
             process_handle,
@@ -271,20 +264,17 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
     };
 
     if result == 0 {
-        error!("[{}] Failed to get handles of modules loaded by target process", "check_if_kernel32_loaded");
+        error!("[{}] Failed to get handles of modules loaded by target process", "check_if_target_mod_loaded");
         if let Some(win_err) = get_last_error() {
-            error!("[{}] Windows error: {}", "check_if_kernel32_loaded", win_err);
+            error!("[{}] Windows error: {}", "check_if_target_mod_loaded", win_err);
         }
         return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
     }
 
-    // Create a buffer to store the name of each module
     let mut module_name = vec![0u8; 256];
 
-    // Iterate through the vector of module handles and check the name of each module
-    // If the name matches the name of the module we are looking for, return the handle
     for i in 0..module_count {
-        info!("[{}] Retrieving name from module: {}", "check_if_kernel32_loaded", i);
+        info!("[{}] Retrieving name from module: {}", "check_if_target_mod_loaded", i);
         let result = unsafe {
             GetModuleBaseNameA(
                 process_handle,
@@ -295,21 +285,20 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
         };
 
         if result == 0 {
-            error!("[{}] Failed to retrieve name from module: {}", "check_if_kernel32_loaded", i);
+            error!("[{}] Failed to retrieve name from module: {}", "check_if_target_mod_loaded", i);
             if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "check_if_kernel32_loaded", win_err);
+                error!("[{}] Windows error: {}", "check_if_target_mod_loaded", win_err);
             }
             return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
         } else {
-            info!("[{}] Successfully retrieved name from module: {}", "check_if_kernel32_loaded", i);
+            info!("[{}] Successfully retrieved name from module: {}", "check_if_target_mod_loaded", i);
         }
 
         let name = unsafe { CStr::from_ptr(module_name.as_ptr() as LPCSTR) }.to_string_lossy().into_owned();
+        info!("[{}] Module name: {}", "check_if_target_mod_loaded", name);
 
-        info!("[{}] Module name: {}", "check_if_kernel32_loaded", name);
-
-        if name.eq_ignore_ascii_case("kernel32.dll") {
-            info!("[{}] Located matching module: {}", "check_if_kernel32_loaded", name);
+        if name.eq_ignore_ascii_case(target_module) {
+            info!("[{}] Located matching module: {}", "check_if_target_mod_loaded", name);
             return Ok(h_mods[i as usize]);
         }
     }
@@ -317,58 +306,48 @@ fn check_if_kernel32_loaded(process_handle: HANDLE) -> Result<HMODULE, DWORD> {
     Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
 }
 
-// This is the main loop for checking if kernel32.dll has been loaded by the target process
-fn suspend_and_check_kernel32(process_info: PROCESS_INFORMATION) -> Result<HMODULE, DWORD> {
-    // Check if kernel32.dll has been loaded by the target process
-    // If it hasn't, then the function will return an error code
-    info!("[{}] Checking if kernel32.dll has been loaded by the target process", "suspend_and_check_kernel32");
-    info!("[{}] Target process handle: {:?}", "suspend_and_check_kernel32", process_info.hProcess);
-    let mut kernel32_base_addr = check_if_kernel32_loaded(process_info.hProcess);
+// This is the main loop for checking if the given target module has been loaded by the target process
+fn suspend_and_check_target_module(process_info: PROCESS_INFORMATION, target_module: &str) -> Result<HMODULE, DWORD> {
+    info!("[{}] Checking if {} has been loaded by the target process", "suspend_and_check_target_module", target_module);
+    info!("[{}] Target process handle: {:?}", "suspend_and_check_target_module", process_info.hProcess);
+    let mut target_mod_base_addr = check_if_target_mod_loaded(process_info.hProcess, target_module);
 
-    // If an error code is returned, then we need to unsuspend the target process to give
-    // it a chance to load kernel32.dll. We then suspend the target process again and
-    // check if kernel32.dll has been loaded. We repeat this process until kernel32.dll
-    // has been loaded by the target process.
-    while kernel32_base_addr.is_err() {
-        // Unsuspend the target process
-        info!("[{}] Unsuspending target process", "suspend_and_check_kernel32");
+    while target_mod_base_addr.is_err() {
+        info!("[{}] Unsuspending target process", "suspend_and_check_target_module");
         let resume_result: DWORD = unsafe { ResumeThread(process_info.hThread) };
 
         if resume_result == DWORD::MAX {
-            error!("[{}] Failed to unsuspend target process", "suspend_and_check_kernel32");
+            error!("[{}] Failed to unsuspend target process", "suspend_and_check_target_module");
             if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "suspend_and_check_kernel32", win_err);
+                error!("[{}] Windows error: {}", "suspend_and_check_target_module", win_err);
             }
             return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
         } else {
-            info!("[{}] Target process successfully unsuspended", "suspend_and_check_kernel32");
+            info!("[{}] Target process successfully unsuspended", "suspend_and_check_target_module");
         }
 
-        // Sleep for 1 millisecond to give the target process a chance to load kernel32.dll
-        info!("[{}] Target process sleeping for 1 millisecond", "suspend_and_check_kernel32");
+        info!("[{}] Target process sleeping for 1 millisecond", "suspend_and_check_target_module");
         std::thread::sleep(std::time::Duration::from_millis(1));
         
-        // Suspend the target process again
-        info!("[{}] Suspending target process", "suspend_and_check_kernel32");
+        info!("[{}] Suspending target process", "suspend_and_check_target_module");
         let suspend_result: DWORD = unsafe { SuspendThread(process_info.hThread) };
 
         if suspend_result == DWORD::MAX {
-            error!("[{}] Failed to suspend target process", "suspend_and_check_kernel32");
+            error!("[{}] Failed to suspend target process", "suspend_and_check_target_module");
             if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "suspend_and_check_kernel32", win_err);
+                error!("[{}] Windows error: {}", "suspend_and_check_target_module", win_err);
             }
             return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
         }
 
-        // Check if kernel32.dll has been loaded by the target process
-        info!("[{}] Checking if kernel32.dll has been loaded by the target process", "suspend_and_check_kernel32");
-        kernel32_base_addr = check_if_kernel32_loaded(process_info.hProcess);
+        info!("[{}] Checking if {} has been loaded by the target process", "suspend_and_check_target_module", target_module);
+        target_mod_base_addr = check_if_target_mod_loaded(process_info.hProcess, target_module);
     }
 
-    info!("[{}] kernel32.dll has been loaded by the target process", "suspend_and_check_kernel32");
-    info!("[{}] Base address of kernel32 in target process: 0x{:x}", "suspend_and_check_kernel32", kernel32_base_addr.unwrap() as usize);
+    info!("[{}] {} has been loaded by the target process", "suspend_and_check_target_module", target_module);
+    info!("[{}] Base address of {} in target process: 0x{:x}", "suspend_and_check_target_module", target_module, target_mod_base_addr.unwrap() as usize);
 
-    kernel32_base_addr
+    target_mod_base_addr
 }
 
 // This function will calculate the address of the LoadLibraryA function in the target process
@@ -920,10 +899,11 @@ fn main() {
     // we need to make sure kernel32.dll is loaded into the target process first and then 
     // get its base address, to which we will add the offset of LoadLibraryA
     // We get the base address by calling suspend_and_check_kernel32 
-    let kernel32_base_addr: HMODULE = match suspend_and_check_kernel32(pi) {
-        Ok(kernel32_base_addr) => kernel32_base_addr,
+    let target_module_name = "kernel32.dll";
+    let target_mod_base_addr: HMODULE = match suspend_and_check_target_module(pi, target_module_name) {
+        Ok(target_mod_base_addr) => target_mod_base_addr,
         Err(e) => {
-            error!("[{}] Failed to check if kernel32.dll is loaded into the process: {}", "main", e);
+            error!("[{}] Failed to check if {} is loaded into the process: {}", "main", target_module_name, e);
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err);
             }
@@ -934,7 +914,7 @@ fn main() {
 
     // Now that kernel32.dll is loaded into the target process, we can get the address of LoadLibraryA
     // by adding the base address of kernel32.dll to the offset of LoadLibraryA
-    let loadlib_addr: *const c_void = match get_loadlib_addr(kernel32_base_addr, loadlib_offset) {
+    let loadlib_addr: *const c_void = match get_loadlib_addr(target_mod_base_addr, loadlib_offset) {
         Ok(loadlib_addr) => loadlib_addr,
         Err(e) => {
             error!("[{}] Failed to calculate address of LoadLibraryA function: {}", "main", e);
@@ -991,6 +971,35 @@ fn main() {
         }
     };
 
+    // Since we are attempting to hook a function from USER32.dll, we need to make sure that USER32.dll
+    // in a similar fashion to how we made sure kernel32.dll was loaded into the process
+    let target_module_name = "USER32.dll";
+    let _target_mod_base_addr: HMODULE = match suspend_and_check_target_module(pi, target_module_name) {
+        Ok(target_mod_base_addr) => target_mod_base_addr,
+        Err(e) => {
+            error!("[{}] Failed to check if {} is loaded into the process: {}", "main", target_module_name, e);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err);
+            }
+            cleanup(Some(pi), Some(dll_path_ptr), None, None, None, None);
+            return;
+        }
+    };
+
+    // Pause before creating remote thread
+    info!("[{}] Waiting for user input to continue program", "main");
+
+    println!("Press Enter to continue...");
+    let mut buffer = String::new();
+    match io::stdin().read_line(&mut buffer) {
+        Ok(_) => {
+            println!("Continuing the execution...");
+            // Insert the rest of your code here
+        },
+        Err(e) => println!("Error: {}", e),
+    }
+
+
     // Now that kernel32.dll is loaded into the process, we can call LoadLibraryA
     // We will do this by calling create_remote_thread
     let remote_thread_handle = match create_remote_thread(pi, unsafe { std::mem::transmute(loadlib_addr) }, dll_path_ptr) {
@@ -1025,6 +1034,19 @@ fn main() {
     // We now check if the event was signaled or if it timed out
     if wait_result {
         info!("[{}] DLL successfully set event", "main");
+
+        // Pause after creating remote thread
+        info!("[{}] Waiting for user input to continue program", "main");
+
+        println!("Press Enter to continue...");
+        let mut buffer = String::new();
+        match io::stdin().read_line(&mut buffer) {
+            Ok(_) => {
+                println!("Continuing the execution...");
+                // Insert the rest of your code here
+            },
+            Err(e) => println!("Error: {}", e),
+        }
 
         // We will now resume the main thread of the target process
         info!("[{}] Resuming Target Process Main Thread", "main");
