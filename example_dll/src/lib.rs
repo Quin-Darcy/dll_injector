@@ -564,8 +564,6 @@ fn set_event(file_mapping_name: &str) -> std::io::Result<()> {
     Ok(())
 }
 
-
-
 #[no_mangle]
 pub unsafe extern "system" fn hook_func(h_wnd: HWND, lp_text: LPCSTR, lp_caption: LPCSTR, u_type: UINT) -> winapi::ctypes::c_int {
     // Convert the LPCSTR to a Rust string

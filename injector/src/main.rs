@@ -9,12 +9,13 @@ use std::io::{self};
 
 use winapi::um::processthreadsapi::{CreateProcessW, CreateRemoteThread, ResumeThread, SuspendThread, STARTUPINFOW, PROCESS_INFORMATION};
 use winapi::um::winbase::CREATE_SUSPENDED;
-use winapi::um::memoryapi::{VirtualAllocEx, WriteProcessMemory};
+use winapi::um::memoryapi::{VirtualAllocEx, WriteProcessMemory, ReadProcessMemory, VirtualProtectEx};
 use winapi::shared::minwindef::{DWORD, HMODULE, FARPROC, LPVOID, FALSE};
 use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
 use winapi::ctypes::c_void;
+use winapi::shared::basetsd::SIZE_T;
 use winapi::um::winbase::WAIT_OBJECT_0;
-use winapi::um::winnt::{LPCSTR, LPSTR, HANDLE, PAGE_READWRITE, DUPLICATE_SAME_ACCESS};
+use winapi::um::winnt::{LPCSTR, LPSTR, HANDLE, PAGE_READWRITE, DUPLICATE_SAME_ACCESS, PAGE_READONLY};
 use winapi::um::psapi::{EnumProcessModulesEx, GetModuleBaseNameA, LIST_MODULES_ALL};
 use winapi::um::errhandlingapi::GetLastError;
 
@@ -156,12 +157,88 @@ fn write_memory(process_handle: HANDLE, dll_path_ptr: *mut c_void, dll_path: &st
         if let Some(win_err) = get_last_error() {
             error!("[{}] Windows error: {}", "write_memory", win_err);
         }
-        Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
+        return Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
     } else {
         info!("[{}] Successfully wrote {:?} to allocated memory!", "write_memory", dll_path_c);
         info!("[{}] Bytes written: {}", "write_memory", bytes_written);
+    }
+
+    // Now that the DLL path has been written to the allocated memory, we can change the memory protection back to read-only
+    let mut old_protect: DWORD = 0;
+    let success_protect = unsafe {
+        VirtualProtectEx(
+            process_handle,
+            dll_path_ptr,
+            dll_path_c.as_bytes_with_nul().len(),
+            PAGE_READONLY,
+            &mut old_protect
+        )
+    };
+
+    if success_protect == 0 {
+        error!("[{}] Failed to change memory protection back to read-only", "write_memory");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "write_memory", win_err);
+        }
+        Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
+    } else {
+        info!("[{}] Successfully changed memory protection back to read-only", "write_memory");
         Ok(true)
     }
+}
+
+// This function is used to validate that the DLL path was successfully written to the allocated memory
+fn read_memory(process_handle: HANDLE, address: LPVOID, size: usize) -> Result<String, DWORD> {
+    let mut buffer: Vec<u8> = vec![0; size];
+    let mut bytes_read: SIZE_T = 0;
+
+    info!("[{}] Calling ReadProcessMemory", "read_memory");
+    info!("[{}] Handle to target process: {:?}", "read_memory", process_handle);
+    info!("[{}] Address to read from: {:?}", "read_memory", address);
+    info!("[{}] Size of buffer: {} bytes", "read_memory", buffer.len());
+
+    let success = unsafe {
+        ReadProcessMemory(
+            process_handle,
+            address,
+            buffer.as_mut_ptr() as _,
+            buffer.len(),
+            &mut bytes_read
+        )
+    };
+
+    if success == 0 {
+        // If the function fails, the return value is 0 (FALSE).
+        error!("[{}] Failed to read memory", "read_memory");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "read_memory", win_err);
+        }
+        return Err(unsafe { GetLastError() });
+    } else {
+        info!("[{}] Successfully read memory", "read_memory");
+    }
+
+    // Resize buffer to actual bytes read
+    buffer.resize(bytes_read, 0);
+
+    // Convert buffer to a string
+    info!("[{}] Converting read back data to string", "read_memory");
+    let read_back_data = match String::from_utf8(buffer) {
+        Ok(data) => {
+            info!("[{}] Successfully converted read back data to string", "read_memory");
+            info!("[{}] Contents of read back data: {}", "read_memory", data);
+            data
+        },
+        Err(e) => {
+            error!("[{}] Failed to convert read back data to string: {}", "read_memory", e);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "read_memory", win_err);
+            }
+            return Err(unsafe { GetLastError() });
+        }
+    };
+
+    Ok(read_back_data)
 }
 
 // This function will get the base address of the kernel32.dll module which has been 
@@ -219,15 +296,69 @@ fn get_loadlib_offset() -> Result<usize, DWORD> {
     Ok(loadlib_offset)
 }
 
-// This function will use the EnumProcessModulesEx function populate a vector with the
-// handles of all the modules loaded by the target process. It then iterates through
-// the vector and checks the name of each module against the name of the module we are
-// looking for. If the module is found, the function returns the handle of the module.
-// If the module is not found, the function returns an error code.
-fn check_if_target_mod_loaded(process_handle: HANDLE, target_module: &str) -> Result<HMODULE, DWORD> {
+// This function will create a loop suspending and unsuspending the target process until all static libraries have been loaded
+// We will unsuspend the target process for 5 milliseconds and then suspend it again. We will then enumerate all modules in the target process
+// by calling check_number_of_modules which returns the number of modules currently loaded into the target process
+// If the count exceeds the module_threshold we will break out of the loop and return
+fn target_load_static_modules(process_info: PROCESS_INFORMATION, module_threshold: u32, delta: u32) -> Result<(), DWORD> {
+    info!("[{}] Allowing target process to load static libraries", "target_load_static_modules");
+    info!("[{}] Target process handle: {:?}", "target_load_static_modules", process_info.hProcess);
+
+    loop {
+        info!("[{}] Unsuspending target process", "target_load_static_modules");
+        let resume_result: DWORD = unsafe { ResumeThread(process_info.hThread) };
+
+        if resume_result == DWORD::MAX {
+            error!("[{}] Failed to unsuspend target process", "target_load_static_modules");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "target_load_static_modules", win_err);
+            }
+            return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+        } else {
+            info!("[{}] Target process successfully unsuspended", "target_load_static_modules");
+        }
+
+        info!("[{}] Target process sleeping for 100 microseconds", "target_load_static_modules");
+        std::thread::sleep(std::time::Duration::from_micros(delta as u64));
+        
+        info!("[{}] Suspending target process", "target_load_static_modules");
+        let suspend_result: DWORD = unsafe { SuspendThread(process_info.hThread) };
+
+        if suspend_result == DWORD::MAX {
+            error!("[{}] Failed to suspend target process", "target_load_static_modules");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "target_load_static_modules", win_err);
+            }
+            return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+        }
+
+        info!("[{}] Checking number of modules loaded by target process", "target_load_static_modules");
+        let module_count = check_number_of_modules(process_info.hProcess);
+
+        match module_count {
+            Ok(count) => {
+                // If the number of modules loaded by the target process exceeds the module_threshold we will break out of the loop
+                if count >= module_threshold {
+                    break;
+                }
+            }
+            Err(e) => {
+                error!("[{}] Failed to retrieve number of modules loaded by target process", "target_load_static_modules");
+                return Err(e);
+            }
+        }
+    }
+
+    info!("[{}] All static libraries loaded by the target process", "target_load_static_modules");
+
+    Ok(())
+}
+
+// This function will check the number of modules loaded by the target process by calling EnumProcessModulesEx
+fn check_number_of_modules(process_handle: HANDLE) -> Result<u32, DWORD> {
     let mut cb_needed: DWORD = 0;
 
-    info!("[{}] Calculating number of modules loaded by target process", "check_if_target_mod_loaded");
+    info!("[{}] Calculating number of modules loaded by target process", "check_number_of_modules");
     let result = unsafe {
         EnumProcessModulesEx(
             process_handle,
@@ -239,20 +370,49 @@ fn check_if_target_mod_loaded(process_handle: HANDLE, target_module: &str) -> Re
     };
 
     if result == 0 {
-        error!("[{}] Failed to calculate number of modules loaded by target process", "check_if_target_mod_loaded");
+        error!("[{}] Failed to calculate number of modules loaded by target process", "check_number_of_modules");
         if let Some(win_err) = get_last_error() {
-            error!("[{}] Windows error: {}", "check_if_target_mod_loaded", win_err);
+            error!("[{}] Windows error: {}", "check_number_of_modules", win_err);
         }
         return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
     } else {
-        info!("[{}] Successfully calculated number of modules loaded by target process", "check_if_target_mod_loaded");
+        info!("[{}] Successfully calculated number of modules loaded by target process", "check_number_of_modules");
+    }
+
+    let module_count = cb_needed / std::mem::size_of::<HMODULE>() as u32;
+    info!("[{}] Number of modules loaded by target process: {}", "check_number_of_modules", module_count);
+
+    Ok(module_count)
+}
+
+// This function retrieves the base address of a module loaded into a process specified by the process handle
+fn get_module_base_address(process_handle: HANDLE, module_name: &str) -> Result<HMODULE, DWORD> {
+    let mut cb_needed: DWORD = 0;
+
+    info!("[{}] Getting module base address for: {}", "get_module_base_address", module_name);
+    info!("[{}] Process handle: {:?}", "get_module_base_address", process_handle);
+
+    let result = unsafe {
+        EnumProcessModulesEx(
+            process_handle,
+            std::ptr::null_mut(),
+            0,
+            &mut cb_needed,
+            LIST_MODULES_ALL,
+        )
+    };
+
+    if result == 0 {
+        error!("[{}] Failed to get module count", "get_module_base_address");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "get_module_base_address", win_err);
+        }
+        return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
     }
 
     let module_count = cb_needed / std::mem::size_of::<HMODULE>() as DWORD;
-    info!("[{}] Number of modules loaded by target process: {}", "check_if_target_mod_loaded", module_count);
     let mut h_mods: Vec<HMODULE> = vec![std::ptr::null_mut(); module_count as usize];
 
-    info!("[{}] Getting handles of modules loaded by target process", "check_if_target_mod_loaded");
     let result = unsafe {
         EnumProcessModulesEx(
             process_handle,
@@ -264,90 +424,42 @@ fn check_if_target_mod_loaded(process_handle: HANDLE, target_module: &str) -> Re
     };
 
     if result == 0 {
-        error!("[{}] Failed to get handles of modules loaded by target process", "check_if_target_mod_loaded");
+        error!("[{}] Failed to get module handles", "get_module_base_address");
         if let Some(win_err) = get_last_error() {
-            error!("[{}] Windows error: {}", "check_if_target_mod_loaded", win_err);
+            error!("[{}] Windows error: {}", "get_module_base_address", win_err);
         }
         return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
     }
 
-    let mut module_name = vec![0u8; 256];
+    let mut module_name_c = vec![0u8; 256];
 
     for i in 0..module_count {
-        info!("[{}] Retrieving name from module: {}", "check_if_target_mod_loaded", i);
         let result = unsafe {
             GetModuleBaseNameA(
                 process_handle,
                 h_mods[i as usize],
-                module_name.as_mut_ptr() as LPSTR,
+                module_name_c.as_mut_ptr() as LPSTR,
                 256 as DWORD,
             )
         };
 
         if result == 0 {
-            error!("[{}] Failed to retrieve name from module: {}", "check_if_target_mod_loaded", i);
+            error!("[{}] Failed to get module name", "get_module_base_address");
             if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "check_if_target_mod_loaded", win_err);
+                error!("[{}] Windows error: {}", "get_module_base_address", win_err);
             }
             return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
-        } else {
-            info!("[{}] Successfully retrieved name from module: {}", "check_if_target_mod_loaded", i);
         }
 
-        let name = unsafe { CStr::from_ptr(module_name.as_ptr() as LPCSTR) }.to_string_lossy().into_owned();
-        info!("[{}] Module name: {}", "check_if_target_mod_loaded", name);
+        let current_module_name = unsafe { CStr::from_ptr(module_name_c.as_ptr() as LPCSTR) }.to_string_lossy().into_owned();
 
-        if name.eq_ignore_ascii_case(target_module) {
-            info!("[{}] Located matching module: {}", "check_if_target_mod_loaded", name);
+        if current_module_name.eq_ignore_ascii_case(module_name) {
+            info!("[{}] {} base address: {:?} found", "get_module_base_address", module_name, h_mods[i as usize]);
             return Ok(h_mods[i as usize]);
         }
     }
-
+    error!("[{}] Module base address: {:?} not found", "get_module_base_address", module_name);
     Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
-}
-
-// This is the main loop for checking if the given target module has been loaded by the target process
-fn suspend_and_check_target_module(process_info: PROCESS_INFORMATION, target_module: &str) -> Result<HMODULE, DWORD> {
-    info!("[{}] Checking if {} has been loaded by the target process", "suspend_and_check_target_module", target_module);
-    info!("[{}] Target process handle: {:?}", "suspend_and_check_target_module", process_info.hProcess);
-    let mut target_mod_base_addr = check_if_target_mod_loaded(process_info.hProcess, target_module);
-
-    while target_mod_base_addr.is_err() {
-        info!("[{}] Unsuspending target process", "suspend_and_check_target_module");
-        let resume_result: DWORD = unsafe { ResumeThread(process_info.hThread) };
-
-        if resume_result == DWORD::MAX {
-            error!("[{}] Failed to unsuspend target process", "suspend_and_check_target_module");
-            if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "suspend_and_check_target_module", win_err);
-            }
-            return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
-        } else {
-            info!("[{}] Target process successfully unsuspended", "suspend_and_check_target_module");
-        }
-
-        info!("[{}] Target process sleeping for 1 millisecond", "suspend_and_check_target_module");
-        std::thread::sleep(std::time::Duration::from_millis(1));
-        
-        info!("[{}] Suspending target process", "suspend_and_check_target_module");
-        let suspend_result: DWORD = unsafe { SuspendThread(process_info.hThread) };
-
-        if suspend_result == DWORD::MAX {
-            error!("[{}] Failed to suspend target process", "suspend_and_check_target_module");
-            if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "suspend_and_check_target_module", win_err);
-            }
-            return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
-        }
-
-        info!("[{}] Checking if {} has been loaded by the target process", "suspend_and_check_target_module", target_module);
-        target_mod_base_addr = check_if_target_mod_loaded(process_info.hProcess, target_module);
-    }
-
-    info!("[{}] {} has been loaded by the target process", "suspend_and_check_target_module", target_module);
-    info!("[{}] Base address of {} in target process: 0x{:x}", "suspend_and_check_target_module", target_module, target_mod_base_addr.unwrap() as usize);
-
-    target_mod_base_addr
 }
 
 // This function will calculate the address of the LoadLibraryA function in the target process
@@ -805,7 +917,6 @@ fn get_last_error() -> Option<String> {
     }
 }
 
-
 fn main() {
     // Initialize the logger
     let config = ConfigBuilder::new()
@@ -864,6 +975,19 @@ fn main() {
         }
     };
 
+    // We will check if the pointer to the allocated memory is null
+    info!("[{}] Checking if the pointer to the allocated memory is null", "main");
+    if dll_path_ptr.is_null() {
+        error!("[{}] The pointer to DLL path is null after allocation", "main");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "main", win_err);
+        }
+        cleanup(Some(pi), None, None, None, None, None);
+        return;
+    } else {
+        info!("[{}] The pointer to DLL path is not null after allocation", "main");
+    }
+
     // Now we will write the DLL's bytes to the allocated memory using WriteProcessMemory
     // This function will return a boolean value indicating whether the DLL was successfully written
     let _success = match write_memory(pi.hProcess, dll_path_ptr, dll_path) {
@@ -895,15 +1019,29 @@ fn main() {
         }
     };
 
-    // In order to call the LoadLibraryA function from the kernel32.dll of the target process, 
-    // we need to make sure kernel32.dll is loaded into the target process first and then 
-    // get its base address, to which we will add the offset of LoadLibraryA
-    // We get the base address by calling suspend_and_check_kernel32 
+    // We will allow the remaining time needed for the target process to finish loading all static modules
+    // before we attempt to inject our DLL into the process
+    let module_threshold = 30; // This is the number of modules that we will wait for before we inject our DLL
+    let delta = 1; // This is the number of microseconds that we will wait between each check
+    let _result = match target_load_static_modules(pi, module_threshold, delta) {
+        Ok(result) => result,
+        Err(e) => {
+            error!("[{}] Failed to wait for target process to finish loading static modules: {}", "main", e);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err);
+            }
+            cleanup(Some(pi), Some(dll_path_ptr), None, None, None, None);
+            return;
+        }
+    };
+
+    // We will get the base address of kernel32.dll by calling get_module_base_address
+    // This function will return the base address of kernel32.dll in the target process
     let target_module_name = "kernel32.dll";
-    let target_mod_base_addr: HMODULE = match suspend_and_check_target_module(pi, target_module_name) {
+    let target_mod_base_addr: HMODULE = match get_module_base_address(pi.hProcess, target_module_name) {
         Ok(target_mod_base_addr) => target_mod_base_addr,
         Err(e) => {
-            error!("[{}] Failed to check if {} is loaded into the process: {}", "main", target_module_name, e);
+            error!("[{}] Failed to get base address of {}: {}", "main", target_module_name, e);
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err);
             }
@@ -970,21 +1108,34 @@ fn main() {
             return;
         }
     };
-
-    // Since we are attempting to hook a function from USER32.dll, we need to make sure that USER32.dll
-    // in a similar fashion to how we made sure kernel32.dll was loaded into the process
-    let target_module_name = "USER32.dll";
-    let _target_mod_base_addr: HMODULE = match suspend_and_check_target_module(pi, target_module_name) {
-        Ok(target_mod_base_addr) => target_mod_base_addr,
+    
+    // Read back the written data for validation
+    info!("[{}] Reading back the written DLL path from allocated memory for validation", "main");
+    let read_back_data = match read_memory(pi.hProcess, dll_path_ptr, dll_path.len()) {
+        Ok(data) => {
+            info!("[{}] Successfully read back the DLL path from allocated memory", "main");
+            data
+        },
         Err(e) => {
-            error!("[{}] Failed to check if {} is loaded into the process: {}", "main", target_module_name, e);
+            error!("[{}] Failed to read back the DLL path from allocated memory: {}", "main", e);
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err);
             }
-            cleanup(Some(pi), Some(dll_path_ptr), None, None, None, None);
+            cleanup(Some(pi), Some(dll_path_ptr), Some(event_handle), None, Some(_file_mapping_handle), Some(current_process_handle));
             return;
         }
     };
+
+    // Confirm that the read back data matches the original DLL path
+    info!("[{}] Confirming that the read back data matches the original DLL path", "main");
+    if &read_back_data != dll_path {
+        error!("[{}] The written DLL path {} doesn't match with the original DLL path", "main", read_back_data);
+        cleanup(Some(pi), Some(dll_path_ptr), Some(event_handle), None, Some(_file_mapping_handle), Some(current_process_handle));
+        return;
+    } else {
+        info!("[{}] The written DLL path {} matches with the original DLL path", "main", read_back_data);
+
+    }
 
     // Pause before creating remote thread
     info!("[{}] Waiting for user input to continue program", "main");
@@ -998,7 +1149,6 @@ fn main() {
         },
         Err(e) => println!("Error: {}", e),
     }
-
 
     // Now that kernel32.dll is loaded into the process, we can call LoadLibraryA
     // We will do this by calling create_remote_thread
@@ -1034,19 +1184,6 @@ fn main() {
     // We now check if the event was signaled or if it timed out
     if wait_result {
         info!("[{}] DLL successfully set event", "main");
-
-        // Pause after creating remote thread
-        info!("[{}] Waiting for user input to continue program", "main");
-
-        println!("Press Enter to continue...");
-        let mut buffer = String::new();
-        match io::stdin().read_line(&mut buffer) {
-            Ok(_) => {
-                println!("Continuing the execution...");
-                // Insert the rest of your code here
-            },
-            Err(e) => println!("Error: {}", e),
-        }
 
         // We will now resume the main thread of the target process
         info!("[{}] Resuming Target Process Main Thread", "main");
