@@ -1,6 +1,7 @@
 #![allow(unused_imports)]
 #![allow(non_snake_case)]
 
+use std::fs;
 use std::ptr::null_mut;
 use std::ffi::{OsStr, CString, CStr, OsString};
 use std::iter::once;
@@ -10,6 +11,8 @@ use std::io::{self, Read};
 use std::process::Command;
 use std::fs::File;
 use std::error::Error;
+use std::thread;
+use std::time::Duration;
 
 use winapi::um::processthreadsapi::{CreateProcessW, CreateRemoteThread, ResumeThread, SuspendThread, OpenProcess, STARTUPINFOW, PROCESS_INFORMATION};
 use winapi::um::winbase::CREATE_SUSPENDED;
@@ -643,13 +646,42 @@ fn main() {
     unsafe {
         if IsWow64Process(target_proc_handle, &mut is_wow64) != 0 {
             if is_wow64 != 0 {
+                info!("[{}] Target process is 32-bit", "main");
+                info!("[{}] Using 32-bit DLL", "main");
                 dll_path = dll32_path;
+            } else {
+                info!("[{}] Target process is 64-bit", "main");
+                info!("[{}] Using 64-bit DLL", "main");
             }
         } else {
             error!("[{}] Failed to determine bitness of target process", "main");
             return;
         }
     }
+
+    // Convert the DLL path to an absolute file path
+    let dll_pathbuf = match fs::canonicalize(dll_path) {
+        Ok(pathbuf) => pathbuf,
+        Err(e) => {
+            error!("[{}] Failed to convert DLL path to absolute path: {}", "main", e);
+            return;
+        }
+    };
+
+    if let Some(path_str) = dll_pathbuf.to_str() {
+        dll_path = path_str.to_string();
+    } else {
+        error!("[{}] Failed to convert DLL path to string", "main");
+        return;
+    }
+
+    dll_path = if dll_path.starts_with("\\\\?\\") {
+        dll_path[4..].to_string()
+    } else {
+        dll_path.to_string()
+    };
+    
+
 
     // Next, we will allocate memory in the process by calling the allocate_memory function
     // This function will return a pointer to the allocated memory which we will use later
@@ -775,17 +807,8 @@ fn main() {
         }
     };
 
-    // Pause before creating remote thread
-    info!("[{}] Waiting for user input to continue program", "main");
-
-    println!("Press Enter to continue...");
-    let mut buffer = String::new();
-    match io::stdin().read_line(&mut buffer) {
-        Ok(_) => {
-            info!("[{}] User input received", "main");
-        },
-        Err(e) => println!("Error: {}", e),
-    }
+    // Pause before cleaning up
+    thread::sleep(Duration::from_secs(5));
 
     cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(remote_thread_handle));
 }

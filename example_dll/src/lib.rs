@@ -12,7 +12,6 @@
 // _hinst_dll: This is the handle to the DLL instance. It's not used in this example, so we'll just ignore it.
 //
 // fdw_reason: This is the reason the function was called. It will be 1 (DLL_PROCESS_ATTACH) when the DLL is loaded and 0 (DLL_PROCESS_DETACH) when it's unloaded.
-#[cfg(target_os = "windows")]
 extern crate winapi;
 
 use winapi::um::winuser::{MessageBoxW, MB_OK};
@@ -21,18 +20,36 @@ use std::ffi::OsStr;
 use std::iter::once;
 use std::ptr::null_mut;
 
+extern crate simplelog;
+extern crate log;
+
+use log::{info, warn, error};
+use simplelog::*;
+use time::macros::format_description;
+use std::fs::File;
+
 #[cfg(target_os = "windows")]
 #[no_mangle]
-pub extern "system" fn DllMain(_hinst_dll: usize, _fdw_reason: u32, _: usize) -> bool {
-    let message = "FUCKER.";
-    let title = "DLL Message";
+pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> bool {
+    // Initialize the logger
+    let config = ConfigBuilder::new()
+        .set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond]"))
+        .build();
+    let _ = WriteLogger::init(LevelFilter::Trace, config, File::create("C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\dll.txt").expect("Failed to initialize logger"));
 
-    let wide_message: Vec<u16> = OsStr::new(message).encode_wide().chain(once(0)).collect();
+    info!("[{}] fwd_reason: {}", "DllMain", "DLL_PROCESS_ATTACH");
+
+    true
+}
+
+fn test_msgbox(arg1: &str, arg2: &str) {
+    let message: String = format!("{}: {}", arg1, arg2);
+    let title: &str = "DLL Message";
+
+    let wide_message: Vec<u16> = OsStr::new(message.as_str()).encode_wide().chain(once(0)).collect();
     let wide_title: Vec<u16> = OsStr::new(title).encode_wide().chain(once(0)).collect();
 
     unsafe {
         MessageBoxW(null_mut(), wide_message.as_ptr(), wide_title.as_ptr(), MB_OK);
-    }
-
-    true
+    };
 }
