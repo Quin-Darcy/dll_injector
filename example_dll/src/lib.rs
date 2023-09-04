@@ -32,7 +32,7 @@ use std::fs::File;
 
 #[cfg(target_os = "windows")]
 #[no_mangle]
-pub extern "system" fn DllMain(_hinst_dll: *mut HINSTANCE__, fdw_reason: u32, _: usize) -> bool {
+pub extern "system" fn DllMain(hinst_dll: *mut HINSTANCE__, fdw_reason: u32, _: usize) -> bool {
     if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
         // Initialize the logger
         let config = ConfigBuilder::new()
@@ -42,6 +42,7 @@ pub extern "system" fn DllMain(_hinst_dll: *mut HINSTANCE__, fdw_reason: u32, _:
         let _ = WriteLogger::init(LevelFilter::Trace, config, File::create("C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\dll.log").expect("Failed to initialize logger"));
 
         info!("[{}] fwd_reason: {}", "DllMain", "DLL_PROCESS_ATTACH");
+        info!("[{}] Base address of the DLL: {:?}", "DllMain", hinst_dll);
     } 
     true
 }

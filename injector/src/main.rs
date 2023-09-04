@@ -533,8 +533,8 @@ fn get_module_base_address(target_proc_handle: HANDLE, module_name: &str) -> Res
             return Ok(h_mods[i as usize]);
         }
     }
-    error!("[{}] {} base address not found", "get_module_base_address", module_name);
-    Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
+    warn!("[{}] {} base address not found", "get_module_base_address", module_name);
+    Err(404 as DWORD)
 }
 
 // This function will get the base address of the given module which has been 
@@ -600,7 +600,7 @@ fn get_function_addr(module_base_addr: HMODULE, function_offset: usize, function
 // This thread will be responsible for loading and unloading the DLL into/from the target process
 // using the LoadLibraryA and FreeLibrary function whose addresses we obtained above
 // The return value is the handle to the newly created thread
-fn create_remote_thread(target_proc_handle: HANDLE, function_ptr: FARPROC, mut lp_parameter: LPVOID) -> Result<HANDLE, DWORD> {
+fn create_remote_thread(target_proc_handle: HANDLE, function_ptr: FARPROC, lp_parameter: LPVOID) -> Result<HANDLE, DWORD> {
     info!("[{}] Creating remote thread in target process ({:?})", "create_remote_thread", target_proc_handle);
 
     let remote_thread_handle = unsafe {
@@ -705,6 +705,16 @@ fn main() {
         }
     };
 
+    // Get the file name from the path
+    let dll_file_name = match dll_pathbuf.file_name() {
+        Some(name) => name.to_str().unwrap_or(""),
+        None => {
+            error!("[{}] Failed to get the file name from the path", "main");
+            return;
+        }
+    };
+
+    // Convert the DLL path to a string
     if let Some(path_str) = dll_pathbuf.to_str() {
         dll_path = path_str.to_string();
     } else {
@@ -712,6 +722,7 @@ fn main() {
         return;
     }
 
+    // Remove the "\\?\" prefix from the DLL path if it exists
     dll_path = if dll_path.starts_with("\\\\?\\") {
         dll_path[4..].to_string()
     } else {
@@ -844,7 +855,7 @@ fn main() {
 
     // Here we need to wait for the remote thread to finish its execution of LoadLibraryA
     info!("[{}] Waiting for remote thread to finish execution of {}", "main", loadlib_str);
-    let wait_result = unsafe { WaitForSingleObject(loadlib_remote_thread_handle, 5) };
+    let wait_result = unsafe { WaitForSingleObject(loadlib_remote_thread_handle, 1000) };
     if wait_result != WAIT_OBJECT_0 {
         error!("[{}] Failed to wait for remote thread to finish", "main");
         if let Some(win_err) = get_last_error() {
@@ -855,69 +866,48 @@ fn main() {
     }
     info!("[{}] Remote thread finished execution of {}", "main", loadlib_str);
 
-    // Get the exit code of the remote thread which is the return value of LoadLibraryA which is a handle to the DLL that was loaded
-    info!("[{}] Checking exit code of remote thread", "main");
-    let mut loadlib_exitcode: DWORD = 0;
-    let success = unsafe { GetExitCodeThread(loadlib_remote_thread_handle, &mut loadlib_exitcode) };
+    let injected_dll_base_addr: HMODULE = match get_module_base_address(target_proc_handle, dll_file_name) {
+        Ok(injected_dll_base_addr) => injected_dll_base_addr,
+        Err(e) => {
+            error!("[{}] Failed to get base address of {}: {}", "main", dll_file_name, e);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err.trim());
+            }
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+            return;
+        }
+    };
+
+    // Validate the handle to the DLL that was loaded
+    info!("[{}] Validating handle to DLL that was loaded", "main");
+    let mut dos_header: winapi::um::winnt::IMAGE_DOS_HEADER = unsafe { std::mem::zeroed() };
+    let mut bytes_read: SIZE_T = 0;
+    
+    let success = unsafe {
+        ReadProcessMemory(
+            target_proc_handle,
+            injected_dll_base_addr as winapi::shared::minwindef::LPCVOID,
+            &mut dos_header as *mut _ as LPVOID,
+            std::mem::size_of::<winapi::um::winnt::IMAGE_DOS_HEADER>(),
+            &mut bytes_read,
+        )
+    };
+    
     if success == 0 {
-        error!("[{}] GetExitCodeThread failed", "main");
+        error!("[{}] Failed to read memory", "main");
         if let Some(win_err) = get_last_error() {
             error!("[{}] Windows error: {}", "main", win_err.trim());
             cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
             return;
         }
     } else {
-        if loadlib_exitcode == 0 {
-            error!("[{}] {} failed", "main", loadlib_str);
-            if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "main", win_err.trim());
-                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
-                return;
-            }
-        } else if loadlib_exitcode == winapi::um::minwinbase::STILL_ACTIVE {
-            error!("[{}] {} is still active", "main", loadlib_str);
-            if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "main", win_err.trim());
-                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
-                return;
-            }
+        // Check magic number in dos_header to make sure it's 'MZ'
+        if dos_header.e_magic == 0x5A4D {
+            info!("[{}] Valid DLL handle", "main");
         } else {
-            info!("[{}] Exit code: {:?}", "main", loadlib_exitcode);
-        }
-    }
-
-    // Validate the handle to the DLL that was loaded
-    info!("[{}] Validating handle to DLL that was loaded", "main");
-    unsafe {
-        let mut dos_header: winapi::um::winnt::IMAGE_DOS_HEADER = std::mem::zeroed();
-        let mut bytes_read: SIZE_T = 0;
-        
-        let success = unsafe {
-            ReadProcessMemory(
-                target_proc_handle,
-                loadlib_exitcode as winapi::shared::minwindef::LPCVOID,
-                &mut dos_header as *mut _ as LPVOID,
-                std::mem::size_of::<winapi::um::winnt::IMAGE_DOS_HEADER>(),
-                &mut bytes_read,
-            )
-        };
-        
-        if success == 0 {
-            error!("[{}] Failed to read memory", "main");
-            if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "main", win_err.trim());
-                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
-                return;
-            }
-        } else {
-            // Check magic number in dos_header to make sure it's 'MZ'
-            if dos_header.e_magic == 0x5A4D {
-                info!("[{}] Valid DLL handle", "main");
-            } else {
-                error!("[{}] Invalid DLL handle", "main");
-                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
-                return;
-            }
+            error!("[{}] Invalid DLL handle", "main");
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+            return;
         }
     }
 
@@ -954,8 +944,8 @@ fn main() {
     };
     
     // Create a remote thread to call FreeLibrary
-    info!("[{}] Creating remote thread to call FreeLibrary and unload injected DLL", "main");
-    let unload_dll_thread_handle = match create_remote_thread(target_proc_handle, unsafe { std::mem::transmute(freelib_addr) }, loadlib_exitcode as *mut c_void) {
+    info!("[{}] Creating remote thread to call {} and unload injected DLL", "main", freelib_str);
+    let unload_dll_thread_handle = match create_remote_thread(target_proc_handle, unsafe { std::mem::transmute(freelib_addr) }, injected_dll_base_addr as *mut c_void) {
         Ok(thread_id) => thread_id,
         Err(e) => {
             error!("[{}] Failed to create remote thread for {}: {}", "main", freelib_str, e);
@@ -982,7 +972,6 @@ fn main() {
 
     // Check exit code of remote thread to confirm that FreeLibrary was successful
     let mut freelib_exitcode: DWORD = 0;
-    info!("[{}] Checking exit code of remote thread", "main");
     let success = unsafe { GetExitCodeThread(unload_dll_thread_handle, &mut freelib_exitcode) };
     if success == 0 {
         error!("[{}] GetExitCodeThread failed", "main");
@@ -999,11 +988,29 @@ fn main() {
                 cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
                 return;
             }
-        } else {
-            info!("[{}] Successfully unloaded the DLL", "main");
-            info!("[{}] Exit code: {:?}", "main", freelib_exitcode);
         }
     }
+
+    // Confirmed that the DLL was unloaded successfully
+    match get_module_base_address(target_proc_handle, dll_file_name) {
+        Ok(_) => {
+            error!("[{}] Failed to unload DLL", "main");
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
+            return;
+        },
+        Err(e) => {
+            if e == 404 {
+                info!("[{}] DLL unloaded successfully", "main");
+            } else {
+                error!("[{}] Failed to get base address of {}: {}", "main", dll_file_name, e);
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "main", win_err.trim());
+                }
+                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+                return;
+            }
+        }
+    };
 
     cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
 }

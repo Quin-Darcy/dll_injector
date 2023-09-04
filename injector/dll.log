@@ -1,1 +1,2 @@
-00:18:46.0847033 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
+23:06:00.0225353 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
+23:06:00.0227789 [INFO] [DllMain] Base address of the DLL: 0x7ffb424d0000
