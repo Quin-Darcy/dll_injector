@@ -15,6 +15,8 @@
 extern crate winapi;
 
 use winapi::um::winuser::{MessageBoxW, MB_OK};
+use winapi::shared::minwindef::HINSTANCE__;
+
 use std::os::windows::ffi::OsStrExt;
 use std::ffi::OsStr;
 use std::iter::once;
@@ -30,15 +32,17 @@ use std::fs::File;
 
 #[cfg(target_os = "windows")]
 #[no_mangle]
-pub extern "system" fn DllMain(_hinst_dll: usize, fdw_reason: u32, _: usize) -> bool {
-    // Initialize the logger
-    let config = ConfigBuilder::new()
-        .set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond]"))
-        .build();
-    let _ = WriteLogger::init(LevelFilter::Trace, config, File::create("C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\dll.txt").expect("Failed to initialize logger"));
+pub extern "system" fn DllMain(_hinst_dll: *mut HINSTANCE__, fdw_reason: u32, _: usize) -> bool {
+    if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
+        // Initialize the logger
+        let config = ConfigBuilder::new()
+            .set_time_format_custom(format_description!("[hour]:[minute]:[second].[subsecond]"))
+            .build();
+        
+        let _ = WriteLogger::init(LevelFilter::Trace, config, File::create("C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\dll.log").expect("Failed to initialize logger"));
 
-    info!("[{}] fwd_reason: {}", "DllMain", "DLL_PROCESS_ATTACH");
-
+        info!("[{}] fwd_reason: {}", "DllMain", "DLL_PROCESS_ATTACH");
+    } 
     true
 }
 

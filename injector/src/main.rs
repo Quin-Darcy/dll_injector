@@ -14,14 +14,15 @@ use std::error::Error;
 use std::thread;
 use std::time::Duration;
 
-use winapi::um::processthreadsapi::{CreateProcessW, CreateRemoteThread, ResumeThread, SuspendThread, OpenProcess, STARTUPINFOW, PROCESS_INFORMATION};
+use winapi::um::processthreadsapi::{CreateProcessW, CreateRemoteThread, ResumeThread, SuspendThread, OpenProcess, GetExitCodeThread, STARTUPINFOW, PROCESS_INFORMATION};
 use winapi::um::winbase::CREATE_SUSPENDED;
 use winapi::um::memoryapi::{VirtualAllocEx, WriteProcessMemory, ReadProcessMemory, VirtualProtectEx};
 use winapi::shared::minwindef::{DWORD, HMODULE, FARPROC, LPVOID, FALSE};
-use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress};
+use winapi::um::libloaderapi::{GetModuleHandleA, GetProcAddress, FreeLibrary};
 use winapi::ctypes::c_void;
 use winapi::shared::basetsd::SIZE_T;
 use winapi::um::winbase::WAIT_OBJECT_0;
+use winapi::um::synchapi::WaitForSingleObject;
 use winapi::um::winnt::{
     LPCSTR, 
     LPSTR, 
@@ -82,7 +83,8 @@ fn get_last_error() -> Option<String> {
 fn cleanup(
     target_proc_handle: Option<HANDLE>,
     dll_path_ptr: Option<LPVOID>,
-    remote_thread_handle: Option<HANDLE>,
+    loadlib_remote_thread_handle: Option<HANDLE>,
+    freelib_remote_thread_handle: Option<HANDLE>,
 ) {
     // Free the allocated memory
     if let Some(dll_path_ptr) = dll_path_ptr {
@@ -103,35 +105,67 @@ fn cleanup(
         }
     }
 
-    // Close the handle to the created thread
-    if let Some(remote_thread_handle) = remote_thread_handle {
-        info!("[{}] Closing handle to thread: {:?}", "cleanup", remote_thread_handle);
-        if remote_thread_handle != winapi::um::handleapi::INVALID_HANDLE_VALUE {
+    // Close the handle to the remote thread created in the target process to load the DLL
+    if let Some(loadlib_remote_thread_handle) = loadlib_remote_thread_handle {
+        info!("[{}] Closing handle to thread: {:?}", "cleanup", loadlib_remote_thread_handle);
+        if loadlib_remote_thread_handle != winapi::um::handleapi::INVALID_HANDLE_VALUE {
             // Wait for the thread to finish execution
-            info!("[{}] Waiting for thread: {:?} to finish execution", "cleanup", remote_thread_handle);
-            let wait_result = unsafe { winapi::um::synchapi::WaitForSingleObject(remote_thread_handle, 0xFFFFFFFF) };
+            info!("[{}] Waiting for thread: {:?} to finish execution", "cleanup", loadlib_remote_thread_handle);
+            let wait_result = unsafe { winapi::um::synchapi::WaitForSingleObject(loadlib_remote_thread_handle, 0xFFFFFFFF) };
             match wait_result {
-                WAIT_OBJECT_0 => info!("[{}] Thread with handle: {:?} has finished execution", "cleanup", remote_thread_handle),
-                WAIT_TIMEOUT => warn!("[{}] Timed out waiting for thread with handle: {:?} to finish execution", "cleanup", remote_thread_handle),
+                WAIT_OBJECT_0 => info!("[{}] Thread with handle: {:?} has finished execution", "cleanup", loadlib_remote_thread_handle),
+                WAIT_TIMEOUT => warn!("[{}] Timed out waiting for thread with handle: {:?} to finish execution", "cleanup", loadlib_remote_thread_handle),
                 _ => {
-                    error!("[{}] An error occurred while waiting for thread with handle: {:?} to finish execution", "cleanup", remote_thread_handle);
+                    error!("[{}] An error occurred while waiting for thread with handle: {:?} to finish execution", "cleanup", loadlib_remote_thread_handle);
                     if let Some(win_err) = get_last_error() {
                         error!("[{}] Windows error: {}", "cleanup", win_err);
                     }
                 },
             }
     
-            let success = unsafe { winapi::um::handleapi::CloseHandle(remote_thread_handle) };
+            let success = unsafe { winapi::um::handleapi::CloseHandle(loadlib_remote_thread_handle) };
             if success == 0 {
-                error!("[{}] Failed to close handle to thread: {:?}", "cleanup", remote_thread_handle);
+                error!("[{}] Failed to close handle to thread: {:?}", "cleanup", loadlib_remote_thread_handle);
                 if let Some(win_err) = get_last_error() {
                     error!("[{}] Windows error: {}", "cleanup", win_err);
                 }
             } else {
-                info!("[{}] Handle to thread: {:?} closed successfully", "cleanup", remote_thread_handle);
+                info!("[{}] Handle to thread: {:?} closed successfully", "cleanup", loadlib_remote_thread_handle);
             }
         } else {
-            warn!("[{}] Thread handle: {:?} is invalid", "cleanup", remote_thread_handle);
+            warn!("[{}] Thread handle: {:?} is invalid", "cleanup", loadlib_remote_thread_handle);
+        }
+    }
+
+    // Close the handle to the remote thread created in the target process to unload the DLL
+    if let Some(freelib_remote_thread_handle) = freelib_remote_thread_handle {
+        info!("[{}] Closing handle to thread: {:?}", "cleanup", freelib_remote_thread_handle);
+        if freelib_remote_thread_handle != winapi::um::handleapi::INVALID_HANDLE_VALUE {
+            // Wait for the thread to finish execution
+            info!("[{}] Waiting for thread: {:?} to finish execution", "cleanup", freelib_remote_thread_handle);
+            let wait_result = unsafe { winapi::um::synchapi::WaitForSingleObject(freelib_remote_thread_handle, 0xFFFFFFFF) };
+            match wait_result {
+                WAIT_OBJECT_0 => info!("[{}] Thread with handle: {:?} has finished execution", "cleanup", freelib_remote_thread_handle),
+                WAIT_TIMEOUT => warn!("[{}] Timed out waiting for thread with handle: {:?} to finish execution", "cleanup", freelib_remote_thread_handle),
+                _ => {
+                    error!("[{}] An error occurred while waiting for thread with handle: {:?} to finish execution", "cleanup", freelib_remote_thread_handle);
+                    if let Some(win_err) = get_last_error() {
+                        error!("[{}] Windows error: {}", "cleanup", win_err);
+                    }
+                },
+            }
+    
+            let success = unsafe { winapi::um::handleapi::CloseHandle(freelib_remote_thread_handle) };
+            if success == 0 {
+                error!("[{}] Failed to close handle to thread: {:?}", "cleanup", freelib_remote_thread_handle);
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
+            } else {
+                info!("[{}] Handle to thread: {:?} closed successfully", "cleanup", freelib_remote_thread_handle);
+            }
+        } else {
+            warn!("[{}] Thread handle: {:?} is invalid", "cleanup", freelib_remote_thread_handle);
         }
     }
 
@@ -430,7 +464,7 @@ fn read_memory(target_proc_handle: HANDLE, dll_path_ptr: LPVOID, dll_path_len: u
 
 // This function retrieves the base address of a module loaded into a process specified by the process handle
 fn get_module_base_address(target_proc_handle: HANDLE, module_name: &str) -> Result<HMODULE, DWORD> {
-    info!("[{}] Getting module base address for: {}", "get_module_base_address", module_name);
+    info!("[{}] Getting {} base address in target process", "get_module_base_address", module_name);
     let mut cb_needed: DWORD = 0;
 
     let result = unsafe {
@@ -495,7 +529,7 @@ fn get_module_base_address(target_proc_handle: HANDLE, module_name: &str) -> Res
         let current_module_name = unsafe { CStr::from_ptr(module_name_c.as_ptr() as LPCSTR) }.to_string_lossy().into_owned();
 
         if current_module_name.eq_ignore_ascii_case(module_name) {
-            info!("[{}] {} base address: {:?}", "get_module_base_address", module_name, h_mods[i as usize]);
+            info!("[{}] {} base address: {:?} in target process", "get_module_base_address", module_name, h_mods[i as usize]);
             return Ok(h_mods[i as usize]);
         }
     }
@@ -503,68 +537,70 @@ fn get_module_base_address(target_proc_handle: HANDLE, module_name: &str) -> Res
     Err(unsafe { winapi::um::errhandlingapi::GetLastError() })
 }
 
-// This function will get the base address of the kernel32.dll module which has been 
+// This function will get the base address of the given module which has been 
 // loaded by the calling process (this program) and use the GetProcAddress function
-// to get the address (relative to the base address) of the LoadLibraryA function
-// The function then subtracts the base address from the LoadLibraryA address to get the offset
-fn get_loadlib_offset() -> Result<usize, DWORD> {
-    let module_str = CString::new("kernel32.dll").unwrap();
-    let loadlib_str = CString::new("LoadLibraryA").unwrap();
-    let loadlib_offset: usize;
+// to get the address (relative to the base address) of the given function
+// The function then subtracts the base address from the function address to get the offset
+fn get_function_offset(module_name: &str, freelib_str: &str) -> Result<usize, DWORD> {
+    let module_str = CString::new(module_name).unwrap();
+    let function_str = CString::new(freelib_str).unwrap();
+    let function_offset: usize;
 
     unsafe {
-        // First we need to get the kernel32.dll module handle
-        info!("[{}] Retrieving handle to {:?} module", "get_loadlib_offset", module_str);
-        let kernel32_handle = GetModuleHandleA(module_str.as_ptr());
+        // First we need to get a handle to the module
+        info!("[{}] Retrieving handle to {:?} module loaded in current process", "get_function_offset", module_str);
+        let module_handle = GetModuleHandleA(module_str.as_ptr());
 
-        if kernel32_handle.is_null() {
-            error!("[{}] Failed to get {:?} module handle", "get_loadlib_offset", module_str);
+        if module_handle.is_null() {
+            error!("[{}] Failed to get {:?} module handle", "get_function_offset", module_str);
             if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "get_loadlib_offset", win_err.trim());
+                error!("[{}] Windows error: {}", "get_function_offset", win_err.trim());
             }
             return Err(winapi::um::errhandlingapi::GetLastError());
         } else {
-            info!("[{}] {:?} module handle: {:p}", "get_loadlib_offset", module_str, kernel32_handle);
+            info!("[{}] {:?} module handle: {:p} in current_process", "get_function_offset", module_str, module_handle);
         }
 
         // Next we need to get the relative address of the LoadLibraryA function
         // We can do this by calling the GetProcAddress function
-        info!("[{}] Retrieving address of {:?} function", "get_loadlib_offset", loadlib_str);
-        let loadlib_ptr = GetProcAddress(kernel32_handle, loadlib_str.as_ptr());
+        info!("[{}] Retrieving address of {:?} function in current process", "get_function_offset", function_str);
+        let function_ptr = GetProcAddress(module_handle, function_str.as_ptr());
 
-        if loadlib_ptr.is_null() {
-            error!("[{}] Failed to get address of {:?} function", "get_loadlib_offset", loadlib_str);
+        if function_ptr.is_null() {
+            error!("[{}] Failed to get address of {:?} function", "get_function_offset", function_str);
             if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "get_loadlib_offset", win_err.trim());
+                error!("[{}] Windows error: {}", "get_function_offset", win_err.trim());
             }
             return Err(winapi::um::errhandlingapi::GetLastError());
         } else {
-            info!("[{}] {:?} function address: {:p}", "get_loadlib_offset", loadlib_str, loadlib_ptr);
+            info!("[{}] {:?} function address: {:p} in current process", "get_function_offset", function_str, function_ptr);
         }
 
-        // Calculate the offset of LoadLibraryA in kernel32.dll
-        loadlib_offset = loadlib_ptr as usize - kernel32_handle as usize;
+        // Calculate the offset of the function in the module
+        function_offset = function_ptr as usize - module_handle as usize;
     }
-    info!("[{}] Calculated offset of {:?} function in {:?} module: 0x{:X}", "get_loadlib_offset", loadlib_str, module_str, loadlib_offset);
 
-    Ok(loadlib_offset)
+    info!("[{}] Calculated offset of {:?} function in {:?} module: 0x{:X}", "get_function_offset", function_str, module_str, function_offset);
+
+    Ok(function_offset)
 }
 
-// This function will calculate the address of the LoadLibraryA function in the target process
-// by adding the offset of the LoadLibraryA function in kernel32.dll to the base address of kernel32.dll
-fn get_loadlib_addr(kernel32_base_addr: HMODULE, loadlib_offset: usize) -> Result<*const c_void, DWORD> {
-    info!("[{}] Calculating address of LoadLibraryA function in target process", "get_loadlib_addr");
-    let loadlib_addr_ptr = (kernel32_base_addr as usize + loadlib_offset) as *const c_void;
-    info!("[{}] Address of LoadLibraryA function in target process: 0x{:x}", "get_loadlib_addr", loadlib_addr_ptr as usize);
+// This function will calculate the address of the function in the target process
+// by adding the offset of the function in the module to the base address of the module
+fn get_function_addr(module_base_addr: HMODULE, function_offset: usize, function_name: &str) -> Result<*const c_void, DWORD> {
+    let function_str = CString::new(function_name).unwrap();
+    info!("[{}] Calculating address of {:?} in target process", "get_function_addr", function_str);
+    let function_addr_ptr = (module_base_addr as usize + function_offset) as *const c_void;
+    info!("[{}] Address of {:?} in target process: 0x{:x}", "get_function_addr", function_str, function_addr_ptr as usize);
 
-    Ok(loadlib_addr_ptr)
+    Ok(function_addr_ptr)
 } 
 
 // Now we will create a remote thread in the target process using CreateRemoteThread
-// This thread will be responsible for loading the DLL into the target process
-// using the LoadLibraryA function whose address we obtained above
+// This thread will be responsible for loading and unloading the DLL into/from the target process
+// using the LoadLibraryA and FreeLibrary function whose addresses we obtained above
 // The return value is the handle to the newly created thread
-fn create_remote_thread(target_proc_handle: HANDLE, load_library: FARPROC, dll_path_ptr: LPVOID) -> Result<HANDLE, DWORD> {
+fn create_remote_thread(target_proc_handle: HANDLE, function_ptr: FARPROC, mut lp_parameter: LPVOID) -> Result<HANDLE, DWORD> {
     info!("[{}] Creating remote thread in target process ({:?})", "create_remote_thread", target_proc_handle);
 
     let remote_thread_handle = unsafe {
@@ -572,8 +608,8 @@ fn create_remote_thread(target_proc_handle: HANDLE, load_library: FARPROC, dll_p
             target_proc_handle,
             null_mut(),
             0,
-            Some(std::mem::transmute(load_library)),
-            dll_path_ptr,  
+            Some(std::mem::transmute(function_ptr)),
+            lp_parameter,  
             0,
             null_mut()
         )
@@ -600,6 +636,7 @@ fn main() {
     let _ = WriteLogger::init(LevelFilter::Info, config, File::create("injector.log").expect("Failed to initialize logger"));
 
     // Check if user has provided the correct number of arguments
+    // USAGE: injector.exe <target_process_name> <path to 32-bit DLL> <path to 64-bit DLL>
     let args: Vec<String> = std::env::args().collect();
     if args.len() != 4 {
         error!("[{}] Invalid number of arguments supplied to injector", "main");
@@ -681,8 +718,6 @@ fn main() {
         dll_path.to_string()
     };
     
-
-
     // Next, we will allocate memory in the process by calling the allocate_memory function
     // This function will return a pointer to the allocated memory which we will use later
     let dll_path_ptr = match allocate_memory(target_proc_handle, &dll_path) {
@@ -692,7 +727,7 @@ fn main() {
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err.trim());
             }
-            cleanup(Some(target_proc_handle), None, None);
+            cleanup(Some(target_proc_handle), None, None, None);
             return;
         }
     };
@@ -703,7 +738,7 @@ fn main() {
         if let Some(win_err) = get_last_error() {
             error!("[{}] Windows error: {}", "main", win_err.trim());
         }
-        cleanup(Some(target_proc_handle), None, None);
+        cleanup(Some(target_proc_handle), None, None, None);
         return;
     }
 
@@ -716,7 +751,7 @@ fn main() {
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err.trim());
             }
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None);
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None, None);
             return;
         }
     };
@@ -732,7 +767,7 @@ fn main() {
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err.trim());
             }
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None);
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None, None);
             return;
         }
     };
@@ -740,7 +775,7 @@ fn main() {
     // Confirm that the read back data matches the original DLL path
     if &read_back_data != &dll_path {
         error!("[{}] The written DLL path {} doesn't match with the original DLL path", "main", read_back_data);
-        cleanup(Some(target_proc_handle), Some(dll_path_ptr), None);
+        cleanup(Some(target_proc_handle), Some(dll_path_ptr), None, None);
         return;
     } else {
         info!("[{}] The written DLL path {} matches with the original DLL path", "main", read_back_data);
@@ -749,66 +784,226 @@ fn main() {
 
     // We will get the base address of kernel32.dll by calling get_module_base_address
     // This function will return the base address of kernel32.dll in the target process
-    let target_module_name = "kernel32.dll";
-    let target_mod_base_addr: HMODULE = match get_module_base_address(target_proc_handle, target_module_name) {
-        Ok(target_mod_base_addr) => target_mod_base_addr,
+    let kernel32_str = "kernel32.dll";
+    let target_kernel32_base_addr: HMODULE = match get_module_base_address(target_proc_handle, kernel32_str) {
+        Ok(target_kernel32_base_addr) => target_kernel32_base_addr,
         Err(e) => {
-            error!("[{}] Failed to get base address of {}: {}", "main", target_module_name, e);
+            error!("[{}] Failed to get base address of {}: {}", "main", kernel32_str, e);
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err.trim());
             }
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None);
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None, None);
             return;
         }
     };
 
     // Next, we need to use LoadLibraryA to load the DLL into the process
-    // We will get the address of the LoadLibraryA function by calling get_loadlib_addr
+    // We will get the address of the LoadLibraryA function by calling get_function_addr
     // This function will get the base address of kernel32.dll that has been loaded into
     // the calling process (this program) and then find the relative offset of LoadLibraryA
     // which is what is returned by the function
-    let loadlib_offset: usize = match get_loadlib_offset() {
-        Ok(load_library_offset) => load_library_offset,
+    let loadlib_str: &str = "LoadLibraryA";
+    let loadlib_offset: usize = match get_function_offset(kernel32_str, loadlib_str) {
+        Ok(loadlib_offset) => loadlib_offset,
         Err(e) => {
-            error!("[{}] Failed to get offset of LoadLibraryA function: {}", "main", e);
+            error!("[{}] Failed to get offset of {:?} function: {}", "main", loadlib_str, e);
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err.trim());
             }
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None);
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None, None);
             return;
         }
     };
 
     // Now that kernel32.dll is loaded into the target process, we can get the address of LoadLibraryA
     // by adding the base address of kernel32.dll to the offset of LoadLibraryA
-    let loadlib_addr: *const c_void = match get_loadlib_addr(target_mod_base_addr, loadlib_offset) {
+    let loadlib_addr: *const c_void = match get_function_addr(target_kernel32_base_addr, loadlib_offset, loadlib_str) {
         Ok(loadlib_addr) => loadlib_addr,
         Err(e) => {
-            error!("[{}] Failed to calculate address of LoadLibraryA function: {}", "main", e);
+            error!("[{}] Failed to calculate address of {:?}: {}", "main", loadlib_str, e);
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err.trim());
             }
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None);
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None, None);
             return;
         }
     };
 
     // Now that we have the address of LoadLibraryA, we can call CreateRemoteThread to execute LoadLibraryA
-    let remote_thread_handle = match create_remote_thread(target_proc_handle, unsafe { std::mem::transmute(loadlib_addr) }, dll_path_ptr) {
+    let loadlib_remote_thread_handle = match create_remote_thread(target_proc_handle, unsafe { std::mem::transmute(loadlib_addr) }, dll_path_ptr) {
         Ok(thread_id) => thread_id,
         Err(e) => {
             error!("[{}] Failed to create remote thread: {}", "main", e);
             if let Some(win_err) = get_last_error() {
                 error!("[{}] Windows error: {}", "main", win_err.trim());
             }
-
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None);
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), None, None);
             return;
         }
     };
 
+    // Here we need to wait for the remote thread to finish its execution of LoadLibraryA
+    info!("[{}] Waiting for remote thread to finish execution of {}", "main", loadlib_str);
+    let wait_result = unsafe { WaitForSingleObject(loadlib_remote_thread_handle, 5) };
+    if wait_result != WAIT_OBJECT_0 {
+        error!("[{}] Failed to wait for remote thread to finish", "main");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "main", win_err.trim());
+        }
+        cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+        return;
+    }
+    info!("[{}] Remote thread finished execution of {}", "main", loadlib_str);
+
+    // Get the exit code of the remote thread which is the return value of LoadLibraryA which is a handle to the DLL that was loaded
+    info!("[{}] Checking exit code of remote thread", "main");
+    let mut loadlib_exitcode: DWORD = 0;
+    let success = unsafe { GetExitCodeThread(loadlib_remote_thread_handle, &mut loadlib_exitcode) };
+    if success == 0 {
+        error!("[{}] GetExitCodeThread failed", "main");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "main", win_err.trim());
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+            return;
+        }
+    } else {
+        if loadlib_exitcode == 0 {
+            error!("[{}] {} failed", "main", loadlib_str);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err.trim());
+                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+                return;
+            }
+        } else if loadlib_exitcode == winapi::um::minwinbase::STILL_ACTIVE {
+            error!("[{}] {} is still active", "main", loadlib_str);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err.trim());
+                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+                return;
+            }
+        } else {
+            info!("[{}] Exit code: {:?}", "main", loadlib_exitcode);
+        }
+    }
+
+    // Validate the handle to the DLL that was loaded
+    info!("[{}] Validating handle to DLL that was loaded", "main");
+    unsafe {
+        let mut dos_header: winapi::um::winnt::IMAGE_DOS_HEADER = std::mem::zeroed();
+        let mut bytes_read: SIZE_T = 0;
+        
+        let success = unsafe {
+            ReadProcessMemory(
+                target_proc_handle,
+                loadlib_exitcode as winapi::shared::minwindef::LPCVOID,
+                &mut dos_header as *mut _ as LPVOID,
+                std::mem::size_of::<winapi::um::winnt::IMAGE_DOS_HEADER>(),
+                &mut bytes_read,
+            )
+        };
+        
+        if success == 0 {
+            error!("[{}] Failed to read memory", "main");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err.trim());
+                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+                return;
+            }
+        } else {
+            // Check magic number in dos_header to make sure it's 'MZ'
+            if dos_header.e_magic == 0x5A4D {
+                info!("[{}] Valid DLL handle", "main");
+            } else {
+                error!("[{}] Invalid DLL handle", "main");
+                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+                return;
+            }
+        }
+    }
+
     // Pause before cleaning up
     thread::sleep(Duration::from_secs(5));
 
-    cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(remote_thread_handle));
+    // Now that the DLL has been loaded into the target process, we can clean up by unloading the DLL
+
+    // First, we need to get the offset of FreeLibrary
+    let freelib_str: &str = "FreeLibrary";
+    let freelib_offset: usize = match get_function_offset(kernel32_str, freelib_str) {
+        Ok(freelib_offset) => freelib_offset,
+        Err(e) => {
+            error!("[{}] Failed to get offset of {:?} function: {}", "main", freelib_str, e);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err.trim());
+            }
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+            return;
+        }
+    };
+    
+    // Here we are calculating the address of FreeLibrary by adding the base address of kernel32.dll with respect to the target process
+    let freelib_addr: *const c_void = match get_function_addr(target_kernel32_base_addr, freelib_offset, freelib_str) {
+        Ok(freelib_addr) => freelib_addr,
+        Err(e) => {
+            error!("[{}] Failed to calculate address of {:?}: {}", "main", freelib_str, e);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err.trim());
+            }
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+            return;
+        }
+    };
+    
+    // Create a remote thread to call FreeLibrary
+    info!("[{}] Creating remote thread to call FreeLibrary and unload injected DLL", "main");
+    let unload_dll_thread_handle = match create_remote_thread(target_proc_handle, unsafe { std::mem::transmute(freelib_addr) }, loadlib_exitcode as *mut c_void) {
+        Ok(thread_id) => thread_id,
+        Err(e) => {
+            error!("[{}] Failed to create remote thread for {}: {}", "main", freelib_str, e);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err.trim());
+            }
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+            return;
+        }
+    };
+
+    // Here we need to wait for the remote thread to finish its execution of FreeLibrary
+    info!("[{}] Waiting for remote thread to finish execution of {}", "main", freelib_str);
+    let wait_result = unsafe { WaitForSingleObject(unload_dll_thread_handle, 10) };
+    if wait_result != WAIT_OBJECT_0 {
+        error!("[{}] Failed to wait for remote thread to finish", "main");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "main", win_err.trim());
+        }
+        cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
+        return;
+    }
+    info!("[{}] Remote thread finished execution of {}", "main", freelib_str);
+
+    // Check exit code of remote thread to confirm that FreeLibrary was successful
+    let mut freelib_exitcode: DWORD = 0;
+    info!("[{}] Checking exit code of remote thread", "main");
+    let success = unsafe { GetExitCodeThread(unload_dll_thread_handle, &mut freelib_exitcode) };
+    if success == 0 {
+        error!("[{}] GetExitCodeThread failed", "main");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "main", win_err.trim());
+            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
+            return;
+        }
+    } else {
+        if freelib_exitcode == 0 {
+            error!("[{}] {} failed", "main", freelib_str);
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "main", win_err.trim());
+                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
+                return;
+            }
+        } else {
+            info!("[{}] Successfully unloaded the DLL", "main");
+            info!("[{}] Exit code: {:?}", "main", freelib_exitcode);
+        }
+    }
+
+    cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
 }
