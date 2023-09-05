@@ -15,12 +15,19 @@
 extern crate winapi;
 
 use winapi::um::winuser::{MessageBoxW, MB_OK};
-use winapi::shared::minwindef::HINSTANCE__;
-
-use std::os::windows::ffi::OsStrExt;
-use std::ffi::OsStr;
+use std::f32::consts::E;
+use std::os::windows::ffi::{OsStrExt, OsStringExt};
+use std::ffi::{OsStr, CString, CStr, OsString};
+use std::fmt;
+use std::ptr;
 use std::iter::once;
 use std::ptr::null_mut;
+use winapi::shared::windef::HWND;
+use winapi::shared::minwindef::{DWORD, HINSTANCE, FARPROC};
+use winapi::um::errhandlingapi::GetLastError;
+use winapi::um::memoryapi::{VirtualAlloc, VirtualProtect};
+use winapi::shared::minwindef::{UINT, HINSTANCE__};
+use winapi::um::winnt::{MEM_COMMIT, PAGE_EXECUTE_READWRITE};
 
 extern crate simplelog;
 extern crate log;
@@ -29,6 +36,8 @@ use log::{info, warn, error};
 use simplelog::*;
 use time::macros::format_description;
 use std::fs::File;
+
+const NUM_STOLEN_BYTES: usize = 24;
 
 #[cfg(target_os = "windows")]
 #[no_mangle]
@@ -41,13 +50,217 @@ pub extern "system" fn DllMain(hinst_dll: *mut HINSTANCE__, fdw_reason: u32, _: 
         
         let _ = WriteLogger::init(LevelFilter::Trace, config, File::create("C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\dll.log").expect("Failed to initialize logger"));
 
+        let target_module_name: &str = "USER32.dll";
+        let target_function_name: &str = "GetMessageW";
+
         info!("[{}] fwd_reason: {}", "DllMain", "DLL_PROCESS_ATTACH");
         info!("[{}] Base address of the DLL: {:?}", "DllMain", hinst_dll);
+        info!("[{}] Target module name: {}", "DllMain", target_module_name);
+        info!("[{}] Target function name: {}", "DllMain", target_function_name);
+
+        begin_hooking(target_module_name, target_function_name);
     } 
     true
 }
 
-fn test_msgbox(arg1: &str, arg2: &str) {
+fn begin_hooking(target_module_str: &str, target_function_name: &str) {
+    // Get the address of the target function
+    let target_func_addr: *const u8 = match get_target_func_addr(target_module_str, target_function_name) {
+        Ok(addr) => addr,
+        Err(_) => {
+            error!("[{}] Failed to get address of {}", "begin_hooking", target_function_name);
+            return;
+        }
+    };
+
+    // Allocate buffer for stolen bytes
+    let mut stolen_bytes: [u8; NUM_STOLEN_BYTES] = [0; NUM_STOLEN_BYTES];
+
+    // Copy the stolen bytes into the buffer
+    unsafe {
+        ptr::copy(target_func_addr, stolen_bytes.as_mut_ptr(), NUM_STOLEN_BYTES);
+    }
+
+    // Log the stolen bytes
+    let hex_bytes: Vec<String> = stolen_bytes.iter()
+        .map(|b| format!("{:02x}", b))
+        .collect();
+
+    let hex_str = hex_bytes.join(" ");
+
+    info!("[{}] {} bytes stolen from {}: {}", "begin_hooking", NUM_STOLEN_BYTES, target_function_name, hex_str);
+
+    // Now we create the trampline function
+    let trampoline: *mut u8 = match create_trampoline(&stolen_bytes, target_func_addr) {
+        Ok(trampoline) => trampoline,
+        Err(_) => {
+            error!("[{}] Failed to create trampoline function", "begin_hooking");
+            return;
+        }
+    };
+}
+
+fn get_target_func_addr(target_module_str: &str, target_function_name: &str) -> Result<*const u8, DWORD> {
+    // Convert the target module name to a CString
+    let target_module_cstr: CString = match CString::new(target_module_str) {
+        Ok(cstr) => cstr,
+        Err(_) => {
+            error!("[{}] Failed to convert target module name to CString", "get_target_func_addr");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "get_target_func_addr", win_err);
+            }
+            return Err(0);
+        }
+    };
+    // Convert the target function name to a CString
+    let target_function_cstr: CString = match CString::new(target_function_name) {
+        Ok(cstr) => cstr,
+        Err(_) => {
+            error!("[{}] Failed to convert target function name to CString", "get_target_func_addr");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "get_target_func_addr", win_err);
+            }
+            return Err(0);
+        }
+    };
+    
+    // Call GetModuleHandleA to get the base address of the target module
+    let mod_handle: *mut HINSTANCE__ = unsafe { winapi::um::libloaderapi::GetModuleHandleA(target_module_cstr.as_ptr()) };
+
+    // If the handle is null, the function failed
+    if mod_handle.is_null() {
+        error!("[{}] Returned handle to {:?} is null", "get_taqrget_func_addr", target_module_cstr);
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "get_target_func_addr", win_err);
+        }
+        return Err(0);
+    } else {
+        info!("[{}] {:?} base address: 0x{:X}", "get_exe_base_address", target_module_cstr, mod_handle as usize);
+    }
+
+    // Get the address of the target function
+    let target_func_addr: FARPROC = unsafe { winapi::um::libloaderapi::GetProcAddress(mod_handle, target_function_cstr.as_ptr()) };
+
+    // If the address is null, the function failed
+    if target_func_addr.is_null() {
+        error!("[{}] Returned address to {:?} is null", "get_target_func_addr", target_function_cstr);
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "get_target_func_addr", win_err);
+        }
+        return Err(0);
+    } else {
+        info!("[{}] {:?} address: 0x{:X}", "get_target_func_addr", target_function_cstr, target_func_addr as usize);
+    }
+    Ok(target_func_addr as *const u8)
+}
+
+// This function will create the trampoline function
+fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *const u8) -> Result<*mut u8, DWORD> {
+    // Set the JMP instruction size depending on the target architecture
+    #[cfg(target_pointer_width = "64")]
+    const JMP_INSTRUCTION_SIZE: usize = 14;
+
+    #[cfg(target_pointer_width = "32")]
+    const JMP_INSTRUCTION_SIZE: usize = 5;
+
+    // Allocate memory for the trampoline function
+    let trampoline = unsafe {
+        VirtualAlloc(
+            ptr::null_mut(),
+            NUM_STOLEN_BYTES+JMP_INSTRUCTION_SIZE, // 5 bytes for the JMP instruction back to the original function
+            MEM_COMMIT,
+            PAGE_EXECUTE_READWRITE,
+        ) as *mut u8
+    };
+
+    // If the allocation failed, return an error
+    if trampoline.is_null() {
+        error!("[{}] Failed to allocate memory for trampoline function", "create_trampoline");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "create_trampoline", win_err);
+        }
+        return Err(0);
+    } else {
+        info!("[{}] Trampoline function allocated at 0x{:X}", "create_trampoline", trampoline as usize);
+    }
+
+    // Copy the stolen bytes into the trampoline function
+    unsafe {
+        ptr::copy(stolen_bytes.as_ptr(), trampoline, NUM_STOLEN_BYTES);
+    }
+
+    // Create the JMP instruction back to the original function
+    unsafe {
+        // Depending on the target architecture, we'll need to create a different JMP instruction
+        #[cfg(target_pointer_width = "64")]
+        {
+            // 64-bit JMP instruction (RIP-relative, etc.)
+            // Assemble the machine code for:
+            // mov rax, target_address
+            // jmp rax
+
+            // MOV RAX, IMM64 = 48 B8 [IMM64]
+            let mov_rax = [0x48, 0xB8];
+            let jmp_rax = [0xFF, 0xE0];
+
+            // Calculate the target address for the jump back
+            let target_address = (target_func_addr as usize) + NUM_STOLEN_BYTES;
+            
+            // Prepare the buffer for our instruction set
+            let mut instruction_set: [u8; 14] = [0; 14]; // 2 for MOV, 8 for target_address, 2 for JMP
+            
+            // Copy the machine code into the buffer
+            instruction_set[0..2].copy_from_slice(&mov_rax);
+            instruction_set[2..10].copy_from_slice(&target_address.to_le_bytes());
+            instruction_set[10..12].copy_from_slice(&jmp_rax);
+
+            // Write the instruction set to the trampoline
+            ptr::copy(instruction_set.as_ptr(), trampoline.add(NUM_STOLEN_BYTES), instruction_set.len());
+        }
+
+        #[cfg(target_pointer_width = "32")]
+        {
+            // Offset for the JMP in 32-bit
+            let offset: i32 = (target_func_addr as i32 + NUM_STOLEN_BYTES as i32) - (trampoline as i32 + NUM_STOLEN_BYTES as i32 + JMP_INSTRUCTION_SIZE as i32);
+            
+            // JMP opcode for near jump is 0xE9 in 32-bit
+            let jmp_opcode: u8 = 0xE9;
+
+            // Write the JMP opcode to the trampoline
+            ptr::write(trampoline.add(NUM_STOLEN_BYTES), jmp_opcode);
+
+            // Write the offset for the JMP
+            ptr::copy(&offset as *const i32 as *const u8, trampoline.add(NUM_STOLEN_BYTES + 1), JMP_INSTRUCTION_SIZE - 1);
+        }
+    }
+
+
+    // Change the protection of the stolen bytes to PAGE_EXECUTE_READWRITE
+    let mut old_protect: DWORD = 0;
+    let success = unsafe {
+        VirtualProtect(
+            trampoline as _,
+            (NUM_STOLEN_BYTES+JMP_INSTRUCTION_SIZE) as _,
+            PAGE_EXECUTE_READWRITE,
+            &mut old_protect as *mut u32,
+        ) != 0
+    };
+
+    // If the protection change failed, return an error
+    if !success {
+        error!("[{}] Failed to change protection of trampoline function", "create_trampoline");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "create_trampoline", win_err);
+        }
+        return Err(0);
+    } else {
+        info!("[{}] Trampoline function protection changed to PAGE_EXECUTE_READWRITE", "create_trampoline");
+    }
+
+    Ok(trampoline)
+}
+
+fn _test_msgbox(arg1: &str, arg2: &str) {
     let message: String = format!("{}: {}", arg1, arg2);
     let title: &str = "DLL Message";
 
@@ -57,4 +270,29 @@ fn test_msgbox(arg1: &str, arg2: &str) {
     unsafe {
         MessageBoxW(null_mut(), wide_message.as_ptr(), wide_title.as_ptr(), MB_OK);
     };
+}
+
+fn get_last_error() -> Option<String> {
+    let error_code = unsafe { GetLastError() };
+
+    if error_code == 0 {
+        None
+    } else {
+        let mut buffer: Vec<u16> = Vec::with_capacity(256);
+        buffer.resize(buffer.capacity(), 0);
+        let len = unsafe {
+            winapi::um::winbase::FormatMessageW(
+                winapi::um::winbase::FORMAT_MESSAGE_FROM_SYSTEM
+                    | winapi::um::winbase::FORMAT_MESSAGE_IGNORE_INSERTS,
+                ptr::null(),
+                error_code,
+                0,
+                buffer.as_mut_ptr(),
+                buffer.len() as u32,
+                ptr::null_mut(),
+            )
+        };
+        buffer.resize(len as usize, 0);
+        Some(OsString::from_wide(&buffer).to_string_lossy().into_owned())
+    }
 }

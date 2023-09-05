@@ -855,7 +855,7 @@ fn main() {
 
     // Here we need to wait for the remote thread to finish its execution of LoadLibraryA
     info!("[{}] Waiting for remote thread to finish execution of {}", "main", loadlib_str);
-    let wait_result = unsafe { WaitForSingleObject(loadlib_remote_thread_handle, 1000) };
+    let wait_result = unsafe { WaitForSingleObject(loadlib_remote_thread_handle, winapi::um::winbase::INFINITE) };
     if wait_result != WAIT_OBJECT_0 {
         error!("[{}] Failed to wait for remote thread to finish", "main");
         if let Some(win_err) = get_last_error() {
@@ -959,7 +959,7 @@ fn main() {
 
     // Here we need to wait for the remote thread to finish its execution of FreeLibrary
     info!("[{}] Waiting for remote thread to finish execution of {}", "main", freelib_str);
-    let wait_result = unsafe { WaitForSingleObject(unload_dll_thread_handle, 10) };
+    let wait_result = unsafe { WaitForSingleObject(unload_dll_thread_handle, winapi::um::winbase::INFINITE) };
     if wait_result != WAIT_OBJECT_0 {
         error!("[{}] Failed to wait for remote thread to finish", "main");
         if let Some(win_err) = get_last_error() {
