@@ -98,6 +98,9 @@ fn begin_hooking(target_module_str: &str, target_function_name: &str) {
             return;
         }
     };
+
+    // Now we actually hook the function
+    // TODO: Make this a function
 }
 
 fn get_target_func_addr(target_module_str: &str, target_function_name: &str) -> Result<*const u8, DWORD> {
@@ -200,7 +203,12 @@ fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *c
             // jmp rax
 
             // MOV RAX, IMM64 = 48 B8 [IMM64]
+            // 0x48 is a prefix indicating that the operation is using 64-bit operands
+            // 0xB8 is essentially telling the CPU that the next 8 bytes after the opcode are 
+            // the immediate value to be moved into RAX
             let mov_rax = [0x48, 0xB8];
+
+            // JMP RAX = FF E0
             let jmp_rax = [0xFF, 0xE0];
 
             // Calculate the target address for the jump back
@@ -256,6 +264,14 @@ fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *c
     } else {
         info!("[{}] Trampoline function protection changed to PAGE_EXECUTE_READWRITE", "create_trampoline");
     }
+
+    // Log the trampoline function
+    let hex_bytes: Vec<String> = unsafe {
+        (0..NUM_STOLEN_BYTES+JMP_INSTRUCTION_SIZE).map(|i| format!("{:02x}", *trampoline.add(i))).collect()
+    };
+    let hex_str = hex_bytes.join(" ");
+
+    info!("[{}] Trampoline function: {}", "create_trampoline", hex_str);
 
     Ok(trampoline)
 }

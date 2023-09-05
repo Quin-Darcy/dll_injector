@@ -1,64 +1,64 @@
-00:58:59.3752241 [INFO] [get_running_procs] Enumerating processes
-00:58:59.3769534 [INFO] [get_running_procs] Bytes returned: 592 bytes
-00:58:59.3770063 [INFO] [get_running_procs] Number of processes enumerated: 148
-00:58:59.3770433 [INFO] [get_running_procs] Iterating through process ID and retrieving module base name
-00:58:59.3792733 [INFO] [get_running_procs] Processes opened: 67
-00:58:59.3793194 [INFO] [get_running_procs] Processes not opened: 80
-00:58:59.3793561 [INFO] [get_running_procs] Last error: Access is denied.
-00:58:59.3793962 [INFO] [is_target_running] Checking if target process (notepad) is running
-00:58:59.379472 [INFO] [is_target_running] Target process is running: notepad.exe (1076)
-00:58:59.3795158 [INFO] [get_target_proc_handle] Getting handle to target process (1076)
-00:58:59.3795606 [INFO] [get_target_proc_handle] Successfully opened target process (1076) with handle 0xa8
-00:58:59.3796078 [INFO] [main] Target process is 64-bit
-00:58:59.3796421 [INFO] [main] Using 64-bit DLL
-00:58:59.3797809 [INFO] [allocate_memory] Allocating memory in target process with handle 0xa8
-00:58:59.3798342 [INFO] [allocate_memory] Successfully allocated memory into target process with handle 0xa8
-00:58:59.379876 [INFO] [allocate_memory] Base address of allocated memory: 0x219ebcd0000
-00:58:59.3799228 [INFO] [allocate_memory] Size of allocated memory: 74 bytes
-00:58:59.3799648 [INFO] [write_memory] Writing "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll64.dll" to allocated memory at base address 0x219ebcd0000
-00:58:59.3802075 [INFO] [write_memory] Bytes written: 74
-00:58:59.3802535 [INFO] [main] Reading back the written DLL path from allocated memory for validation
-00:58:59.3802966 [INFO] [read_memory] Contents of read back data: C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll64.dll
-00:58:59.3803361 [INFO] [main] The written DLL path C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll64.dll matches with the original DLL path
-00:58:59.3803791 [INFO] [get_module_base_address] Getting kernel32.dll base address in target process
-00:58:59.3805277 [INFO] [get_module_base_address] kernel32.dll base address: 0x7ffb4bfc0000 in target process
-00:58:59.3805775 [INFO] [get_function_offset] Retrieving handle to "kernel32.dll" module loaded in current process
-00:58:59.3806505 [INFO] [get_function_offset] "kernel32.dll" module handle: 0x7ffb4bfc0000 in current_process
-00:58:59.3807212 [INFO] [get_function_offset] Retrieving address of "LoadLibraryA" function in current process
-00:58:59.38079 [INFO] [get_function_offset] "LoadLibraryA" function address: 0x7ffb4bfe0c70 in current process
-00:58:59.3808625 [INFO] [get_function_offset] Calculated offset of "LoadLibraryA" function in "kernel32.dll" module: 0x20C70
-00:58:59.3809595 [INFO] [get_function_addr] Calculating address of "LoadLibraryA" in target process
-00:58:59.3810238 [INFO] [get_function_addr] Address of "LoadLibraryA" in target process: 0x7ffb4bfe0c70
-00:58:59.3810935 [INFO] [create_remote_thread] Creating remote thread in target process (0xa8)
-00:58:59.3811763 [INFO] [create_remote_thread] Handle to remote thread: 0xb4
-00:58:59.3812208 [INFO] [main] Waiting for remote thread to finish execution of LoadLibraryA
-00:59:09.4496082 [INFO] [main] Remote thread finished execution of LoadLibraryA
-00:59:09.4497013 [INFO] [get_module_base_address] Getting dll64.dll base address in target process
-00:59:09.4505978 [INFO] [get_module_base_address] dll64.dll base address: 0x7ffb46be0000 in target process
-00:59:09.4506625 [INFO] [main] Validating handle to DLL that was loaded
-00:59:09.4507011 [INFO] [main] Valid DLL handle
-00:59:14.457442 [INFO] [get_function_offset] Retrieving handle to "kernel32.dll" module loaded in current process
-00:59:14.4575499 [INFO] [get_function_offset] "kernel32.dll" module handle: 0x7ffb4bfc0000 in current_process
-00:59:14.4576209 [INFO] [get_function_offset] Retrieving address of "FreeLibrary" function in current process
-00:59:14.4576862 [INFO] [get_function_offset] "FreeLibrary" function address: 0x7ffb4bfdcf50 in current process
-00:59:14.4578103 [INFO] [get_function_offset] Calculated offset of "FreeLibrary" function in "kernel32.dll" module: 0x1CF50
-00:59:14.4579062 [INFO] [get_function_addr] Calculating address of "FreeLibrary" in target process
-00:59:14.4579745 [INFO] [get_function_addr] Address of "FreeLibrary" in target process: 0x7ffb4bfdcf50
-00:59:14.4580436 [INFO] [main] Creating remote thread to call FreeLibrary and unload injected DLL
-00:59:14.4580813 [INFO] [create_remote_thread] Creating remote thread in target process (0xa8)
-00:59:14.4581804 [INFO] [create_remote_thread] Handle to remote thread: 0xac
-00:59:14.4582521 [INFO] [main] Waiting for remote thread to finish execution of FreeLibrary
-00:59:14.4592215 [INFO] [main] Remote thread finished execution of FreeLibrary
-00:59:14.4592729 [INFO] [get_module_base_address] Getting dll64.dll base address in target process
-00:59:14.4601504 [WARN] [get_module_base_address] dll64.dll base address not found
-00:59:14.4602013 [INFO] [main] DLL unloaded successfully
-00:59:14.4602448 [INFO] [cleanup] Allocated memory at address: 0x219ebcd0000 freed successfully
-00:59:14.4602922 [INFO] [cleanup] Closing handle to thread: 0xb4
-00:59:14.4603295 [INFO] [cleanup] Waiting for thread: 0xb4 to finish execution
-00:59:14.4604303 [INFO] [cleanup] Thread with handle: 0xb4 has finished execution
-00:59:14.4604749 [INFO] [cleanup] Handle to thread: 0xb4 closed successfully
-00:59:14.4605142 [INFO] [cleanup] Closing handle to thread: 0xac
-00:59:14.4605509 [INFO] [cleanup] Waiting for thread: 0xac to finish execution
-00:59:14.4605914 [INFO] [cleanup] Thread with handle: 0xac has finished execution
-00:59:14.4606318 [INFO] [cleanup] Handle to thread: 0xac closed successfully
-00:59:14.4606711 [INFO] [cleanup] Target process handle: 0xa8 closed successfully
+04:27:30.554521 [INFO] [get_running_procs] Enumerating processes
+04:27:30.5566433 [INFO] [get_running_procs] Bytes returned: 604 bytes
+04:27:30.5567029 [INFO] [get_running_procs] Number of processes enumerated: 151
+04:27:30.5567396 [INFO] [get_running_procs] Iterating through process ID and retrieving module base name
+04:27:30.5587499 [INFO] [get_running_procs] Processes opened: 67
+04:27:30.5587978 [INFO] [get_running_procs] Processes not opened: 83
+04:27:30.5588343 [INFO] [get_running_procs] Last error: Access is denied.
+04:27:30.5588711 [INFO] [is_target_running] Checking if target process (notepad) is running
+04:27:30.5589521 [INFO] [is_target_running] Target process is running: notepad.exe (3716)
+04:27:30.5589964 [INFO] [get_target_proc_handle] Getting handle to target process (3716)
+04:27:30.5590419 [INFO] [get_target_proc_handle] Successfully opened target process (3716) with handle 0xa4
+04:27:30.5590893 [INFO] [main] Target process is 64-bit
+04:27:30.5591236 [INFO] [main] Using 64-bit DLL
+04:27:30.5592703 [INFO] [allocate_memory] Allocating memory in target process with handle 0xa4
+04:27:30.5593234 [INFO] [allocate_memory] Successfully allocated memory into target process with handle 0xa4
+04:27:30.5593652 [INFO] [allocate_memory] Base address of allocated memory: 0x225b2ad0000
+04:27:30.5594033 [INFO] [allocate_memory] Size of allocated memory: 74 bytes
+04:27:30.5594441 [INFO] [write_memory] Writing "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll64.dll" to allocated memory at base address 0x225b2ad0000
+04:27:30.5596729 [INFO] [write_memory] Bytes written: 74
+04:27:30.5597158 [INFO] [main] Reading back the written DLL path from allocated memory for validation
+04:27:30.5597576 [INFO] [read_memory] Contents of read back data: C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll64.dll
+04:27:30.5597969 [INFO] [main] The written DLL path C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll64.dll matches with the original DLL path
+04:27:30.559835 [INFO] [get_module_base_address] Getting kernel32.dll base address in target process
+04:27:30.5599898 [INFO] [get_module_base_address] kernel32.dll base address: 0x7ffb4bfc0000 in target process
+04:27:30.5600506 [INFO] [get_function_offset] Retrieving handle to "kernel32.dll" module loaded in current process
+04:27:30.5601239 [INFO] [get_function_offset] "kernel32.dll" module handle: 0x7ffb4bfc0000 in current_process
+04:27:30.5601957 [INFO] [get_function_offset] Retrieving address of "LoadLibraryA" function in current process
+04:27:30.5602648 [INFO] [get_function_offset] "LoadLibraryA" function address: 0x7ffb4bfe0c70 in current process
+04:27:30.5603368 [INFO] [get_function_offset] Calculated offset of "LoadLibraryA" function in "kernel32.dll" module: 0x20C70
+04:27:30.5604352 [INFO] [get_function_addr] Calculating address of "LoadLibraryA" in target process
+04:27:30.5605007 [INFO] [get_function_addr] Address of "LoadLibraryA" in target process: 0x7ffb4bfe0c70
+04:27:30.5605765 [INFO] [create_remote_thread] Creating remote thread in target process (0xa4)
+04:27:30.5606669 [INFO] [create_remote_thread] Handle to remote thread: 0xb0
+04:27:30.5630524 [INFO] [main] Waiting for remote thread to finish execution of LoadLibraryA
+04:27:30.566559 [INFO] [main] Remote thread finished execution of LoadLibraryA
+04:27:30.5666104 [INFO] [get_module_base_address] Getting dll64.dll base address in target process
+04:27:30.5691694 [INFO] [get_module_base_address] dll64.dll base address: 0x7ffb46bb0000 in target process
+04:27:30.5692302 [INFO] [main] Validating handle to DLL that was loaded
+04:27:30.5692684 [INFO] [main] Valid DLL handle
+04:27:35.5794414 [INFO] [get_function_offset] Retrieving handle to "kernel32.dll" module loaded in current process
+04:27:35.579541 [INFO] [get_function_offset] "kernel32.dll" module handle: 0x7ffb4bfc0000 in current_process
+04:27:35.5796132 [INFO] [get_function_offset] Retrieving address of "FreeLibrary" function in current process
+04:27:35.5796788 [INFO] [get_function_offset] "FreeLibrary" function address: 0x7ffb4bfdcf50 in current process
+04:27:35.5798087 [INFO] [get_function_offset] Calculated offset of "FreeLibrary" function in "kernel32.dll" module: 0x1CF50
+04:27:35.5799062 [INFO] [get_function_addr] Calculating address of "FreeLibrary" in target process
+04:27:35.5799735 [INFO] [get_function_addr] Address of "FreeLibrary" in target process: 0x7ffb4bfdcf50
+04:27:35.5800431 [INFO] [main] Creating remote thread to call FreeLibrary and unload injected DLL
+04:27:35.5800808 [INFO] [create_remote_thread] Creating remote thread in target process (0xa4)
+04:27:35.5801718 [INFO] [create_remote_thread] Handle to remote thread: 0xb8
+04:27:35.5802172 [INFO] [main] Waiting for remote thread to finish execution of FreeLibrary
+04:27:35.5803911 [INFO] [main] Remote thread finished execution of FreeLibrary
+04:27:35.5804419 [INFO] [get_module_base_address] Getting dll64.dll base address in target process
+04:27:35.581248 [WARN] [get_module_base_address] dll64.dll base address not found
+04:27:35.5812934 [INFO] [main] DLL unloaded successfully
+04:27:35.5813366 [INFO] [cleanup] Allocated memory at address: 0x225b2ad0000 freed successfully
+04:27:35.5813874 [INFO] [cleanup] Closing handle to thread: 0xb0
+04:27:35.5814251 [INFO] [cleanup] Waiting for thread: 0xb0 to finish execution
+04:27:35.5814673 [INFO] [cleanup] Thread with handle: 0xb0 has finished execution
+04:27:35.5815103 [INFO] [cleanup] Handle to thread: 0xb0 closed successfully
+04:27:35.5815503 [INFO] [cleanup] Closing handle to thread: 0xb8
+04:27:35.5815874 [INFO] [cleanup] Waiting for thread: 0xb8 to finish execution
+04:27:35.5816282 [INFO] [cleanup] Thread with handle: 0xb8 has finished execution
+04:27:35.5816687 [INFO] [cleanup] Handle to thread: 0xb8 closed successfully
+04:27:35.5817086 [INFO] [cleanup] Target process handle: 0xa4 closed successfully

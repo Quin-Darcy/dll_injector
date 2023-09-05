@@ -1,7 +1,10 @@
-00:59:09.4471943 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
-00:59:09.4475733 [INFO] [DllMain] Base address of the DLL: 0x7ffb46be0000
-00:59:09.4477363 [INFO] [DllMain] Target module name: USER32.dll
-00:59:09.4479128 [INFO] [DllMain] Target function name: GetMessageW
-00:59:09.4482208 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FFB4BD70000
-00:59:09.4487796 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FFB4BD91B80
-00:59:09.4492997 [INFO] [begin_hooking] Stolen bytes in hexadecimal: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 41 f7 c1 00 00 fe
+04:27:30.565441 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
+04:27:30.5655579 [INFO] [DllMain] Base address of the DLL: 0x7ffb46bb0000
+04:27:30.565593 [INFO] [DllMain] Target module name: USER32.dll
+04:27:30.5658534 [INFO] [DllMain] Target function name: GetMessageW
+04:27:30.565895 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FFB4BD70000
+04:27:30.5659661 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FFB4BD91B80
+04:27:30.566134 [INFO] [begin_hooking] 24 bytes stolen from GetMessageW: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 41 f7 c1 00 00 fe
+04:27:30.5661859 [INFO] [create_trampoline] Trampoline function allocated at 0x225B2AF0000
+04:27:30.5662275 [INFO] [create_trampoline] Trampoline function protection changed to PAGE_EXECUTE_READWRITE
+04:27:30.5662699 [INFO] [create_trampoline] Trampoline function: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 41 f7 c1 00 00 fe 48 b8 98 1b d9 4b fb 7f 00 00 ff e0 00 00
