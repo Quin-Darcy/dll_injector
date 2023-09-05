@@ -22,12 +22,15 @@ use std::fmt;
 use std::ptr;
 use std::iter::once;
 use std::ptr::null_mut;
+use std::sync::atomic::{AtomicPtr, Ordering};
+
 use winapi::shared::windef::HWND;
-use winapi::shared::minwindef::{DWORD, HINSTANCE, FARPROC};
+use winapi::shared::minwindef::{DWORD, HINSTANCE, FARPROC, BOOL};
 use winapi::um::errhandlingapi::GetLastError;
 use winapi::um::memoryapi::{VirtualAlloc, VirtualProtect};
 use winapi::shared::minwindef::{UINT, HINSTANCE__};
 use winapi::um::winnt::{MEM_COMMIT, PAGE_EXECUTE_READWRITE};
+use winapi::um::winuser::LPMSG;
 
 extern crate simplelog;
 extern crate log;
@@ -38,6 +41,8 @@ use time::macros::format_description;
 use std::fs::File;
 
 const NUM_STOLEN_BYTES: usize = 24;
+
+static TRAMPOLINE_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
 #[cfg(target_os = "windows")]
 #[no_mangle]
@@ -99,8 +104,21 @@ fn begin_hooking(target_module_str: &str, target_function_name: &str) {
         }
     };
 
+    // Get the address of the hook function
+    let hook_func_addr = hook_func as *const () as *mut u8;
+
     // Now we actually hook the function
-    // TODO: Make this a function
+    match set_hook(target_func_addr, hook_func_addr) {
+        Ok(_) => {
+            info!("[{}] Hooked {} successfully", "begin_hooking", target_function_name);
+            info!("[{}] Trampoline function address: 0x{:X}", "begin_hooking", trampoline as usize);
+            info!("[{}] Hook function address: 0x{:X}", "begin_hooking", hook_func_addr as usize);
+        },
+        Err(_) => {
+            error!("[{}] Failed to hook {}", "begin_hooking", target_function_name);
+            return;
+        }
+    }
 }
 
 fn get_target_func_addr(target_module_str: &str, target_function_name: &str) -> Result<*const u8, DWORD> {
@@ -132,7 +150,7 @@ fn get_target_func_addr(target_module_str: &str, target_function_name: &str) -> 
 
     // If the handle is null, the function failed
     if mod_handle.is_null() {
-        error!("[{}] Returned handle to {:?} is null", "get_taqrget_func_addr", target_module_cstr);
+        error!("[{}] Returned handle to {:?} is null", "get_target_func_addr", target_module_cstr);
         if let Some(win_err) = get_last_error() {
             error!("[{}] Windows error: {}", "get_target_func_addr", win_err);
         }
@@ -170,7 +188,7 @@ fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *c
     let trampoline = unsafe {
         VirtualAlloc(
             ptr::null_mut(),
-            NUM_STOLEN_BYTES+JMP_INSTRUCTION_SIZE, // 5 bytes for the JMP instruction back to the original function
+            NUM_STOLEN_BYTES+JMP_INSTRUCTION_SIZE,
             MEM_COMMIT,
             PAGE_EXECUTE_READWRITE,
         ) as *mut u8
@@ -197,7 +215,7 @@ fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *c
         // Depending on the target architecture, we'll need to create a different JMP instruction
         #[cfg(target_pointer_width = "64")]
         {
-            // 64-bit JMP instruction (RIP-relative, etc.)
+            // 64-bit JMP instruction 
             // Assemble the machine code for:
             // mov rax, target_address
             // jmp rax
@@ -274,6 +292,87 @@ fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *c
     info!("[{}] Trampoline function: {}", "create_trampoline", hex_str);
 
     Ok(trampoline)
+}
+
+pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<(), DWORD> {
+    #[cfg(target_pointer_width = "64")]
+    const JMP_INSTRUCTION_SIZE: usize = 14;
+
+    #[cfg(target_pointer_width = "32")]
+    const JMP_INSTRUCTION_SIZE: usize = 5;
+
+    let mut old_protect: DWORD = 0;
+    if unsafe {
+        VirtualProtect(
+            target_func_addr as *mut _,
+            JMP_INSTRUCTION_SIZE,
+            PAGE_EXECUTE_READWRITE,
+            &mut old_protect as *mut _
+        )
+    } == 0 {
+        return Err(unsafe { GetLastError() });
+    }
+
+    let mut jmp_instr: [u8; JMP_INSTRUCTION_SIZE] = [0; JMP_INSTRUCTION_SIZE];
+    
+    unsafe {
+        #[cfg(target_pointer_width = "64")]
+        {
+            let mov_rax = [0x48, 0xB8];
+            let jmp_rax = [0xFF, 0xE0];
+            let target_address = hook_func_addr as usize;
+    
+            let mut instruction_set: [u8; 14] = [0; 14];
+            
+            instruction_set[0..2].copy_from_slice(&mov_rax);
+            instruction_set[2..10].copy_from_slice(&target_address.to_le_bytes());
+            instruction_set[10..12].copy_from_slice(&jmp_rax);
+    
+            ptr::copy(instruction_set.as_ptr(), jmp_instr.as_mut_ptr(), instruction_set.len());
+        }
+    
+        #[cfg(target_pointer_width = "32")]
+        {
+            let offset: i32 = (hook_func_addr as i32 + JMP_INSTRUCTION_SIZE as i32) - (target_func_addr as i32 + JMP_INSTRUCTION_SIZE as i32);
+            
+            let jmp_opcode: u8 = 0xE9;
+            
+            ptr::write(jmp_instr.as_mut_ptr(), jmp_opcode);
+            
+            ptr::copy(&offset as *const i32 as *const u8, jmp_instr.as_mut_ptr().add(1), 4);
+        }
+    
+        ptr::copy(jmp_instr.as_ptr(), target_func_addr as *mut u8, JMP_INSTRUCTION_SIZE);
+        
+        VirtualProtect(
+            target_func_addr as *mut _,
+            JMP_INSTRUCTION_SIZE,
+            old_protect,
+            &mut old_protect as *mut _
+        );
+    }    
+
+    Ok(())
+}
+
+
+#[no_mangle]
+pub extern "system" fn hook_func(
+    lpMsg: LPMSG,
+    hWnd: HWND,
+    wMsgFilterMin: UINT,
+    wMsgFilterMax: UINT
+) -> BOOL {
+    // Log the hook function
+    info!("[{}] lpMsg: {:?}", "hook_func", lpMsg);
+
+    // Fetch the trampoline function from the global variable
+    let trampoline: extern "system" fn(LPMSG, HWND, UINT, UINT) -> BOOL = unsafe {
+        std::mem::transmute(TRAMPOLINE_FUNC.load(Ordering::SeqCst))
+    };
+
+    // Call the trampoline function
+    unsafe { trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax) }
 }
 
 fn _test_msgbox(arg1: &str, arg2: &str) {

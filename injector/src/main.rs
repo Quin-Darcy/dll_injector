@@ -911,8 +911,9 @@ fn main() {
         }
     }
 
-    // Pause before cleaning up
-    thread::sleep(Duration::from_secs(5));
+    // Wait for user input before unloading the DLL
+    let mut input = String::new();
+    io::stdin().read_line(&mut input).unwrap();
 
     // Now that the DLL has been loaded into the target process, we can clean up by unloading the DLL
 
