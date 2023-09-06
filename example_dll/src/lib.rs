@@ -40,7 +40,7 @@ use simplelog::*;
 use time::macros::format_description;
 use std::fs::File;
 
-const NUM_STOLEN_BYTES: usize = 24;
+const NUM_STOLEN_BYTES: usize = 15;
 
 static TRAMPOLINE_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
@@ -103,6 +103,9 @@ fn begin_hooking(target_module_str: &str, target_function_name: &str) {
             return;
         }
     };
+
+    // Set the trampoline function in the global variable
+    TRAMPOLINE_FUNC.store(trampoline as *mut _, Ordering::SeqCst);
 
     // Get the address of the hook function
     let hook_func_addr = hook_func as *const () as *mut u8;
@@ -260,11 +263,10 @@ fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *c
         }
     }
 
-
     // Change the protection of the stolen bytes to PAGE_EXECUTE_READWRITE
     let mut old_protect: DWORD = 0;
     let success = unsafe {
-        VirtualProtect(
+        VirtualProtect( 
             trampoline as _,
             (NUM_STOLEN_BYTES+JMP_INSTRUCTION_SIZE) as _,
             PAGE_EXECUTE_READWRITE,
@@ -310,7 +312,11 @@ pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<
             &mut old_protect as *mut _
         )
     } == 0 {
-        return Err(unsafe { GetLastError() });
+        error!("[{}] Failed to change protection of target function", "set_hook");
+        if let Some(win_err) = get_last_error() {
+            error!("[{}] Windows error: {}", "set_hook", win_err);
+        }
+        return Err(0);
     }
 
     let mut jmp_instr: [u8; JMP_INSTRUCTION_SIZE] = [0; JMP_INSTRUCTION_SIZE];
@@ -343,13 +349,30 @@ pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<
         }
     
         ptr::copy(jmp_instr.as_ptr(), target_func_addr as *mut u8, JMP_INSTRUCTION_SIZE);
+
+        // Log the JMP instruction as a hex string
+        let hex_bytes: Vec<String> = jmp_instr.iter()
+            .map(|b| format!("{:02x}", b))
+            .collect();
+
+        let hex_str = hex_bytes.join(" ");
+
+        info!("[{}] Bytes written to target function: {:?}", "set_hook", hex_str);
         
-        VirtualProtect(
+        let result = VirtualProtect(
             target_func_addr as *mut _,
             JMP_INSTRUCTION_SIZE,
             old_protect,
             &mut old_protect as *mut _
         );
+
+        if result == 0 {
+            error!("[{}] Failed to change protection of target function", "set_hook");
+            if let Some(win_err) = get_last_error() {
+                error!("[{}] Windows error: {}", "set_hook", win_err);
+            }
+            return Err(0);
+        }
     }    
 
     Ok(())
@@ -364,7 +387,7 @@ pub extern "system" fn hook_func(
     wMsgFilterMax: UINT
 ) -> BOOL {
     // Log the hook function
-    info!("[{}] lpMsg: {:?}", "hook_func", lpMsg);
+    // info!("[{}] lpMsg: {:?}", "hook_func", lpMsg);
 
     // Fetch the trampoline function from the global variable
     let trampoline: extern "system" fn(LPMSG, HWND, UINT, UINT) -> BOOL = unsafe {
@@ -372,19 +395,8 @@ pub extern "system" fn hook_func(
     };
 
     // Call the trampoline function
-    unsafe { trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax) }
-}
-
-fn _test_msgbox(arg1: &str, arg2: &str) {
-    let message: String = format!("{}: {}", arg1, arg2);
-    let title: &str = "DLL Message";
-
-    let wide_message: Vec<u16> = OsStr::new(message.as_str()).encode_wide().chain(once(0)).collect();
-    let wide_title: Vec<u16> = OsStr::new(title).encode_wide().chain(once(0)).collect();
-
-    unsafe {
-        MessageBoxW(null_mut(), wide_message.as_ptr(), wide_title.as_ptr(), MB_OK);
-    };
+    info!("[{}] Calling trampoline function: {:?}", "hook_func", TRAMPOLINE_FUNC);
+    trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax)
 }
 
 fn get_last_error() -> Option<String> {

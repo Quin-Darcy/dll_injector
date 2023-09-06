@@ -1,14 +1,15 @@
-05:31:00.5108513 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
-05:31:00.511006 [INFO] [DllMain] Base address of the DLL: 0x7ffb46b80000
-05:31:00.5110442 [INFO] [DllMain] Target module name: USER32.dll
-05:31:00.5110798 [INFO] [DllMain] Target function name: GetMessageW
-05:31:00.5111393 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FFB4BD70000
-05:31:00.5112538 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FFB4BD91B80
-05:31:00.5113614 [INFO] [begin_hooking] 24 bytes stolen from GetMessageW: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 41 f7 c1 00 00 fe
-05:31:00.5114201 [INFO] [create_trampoline] Trampoline function allocated at 0x1FB8B100000
-05:31:00.5114713 [INFO] [create_trampoline] Trampoline function protection changed to PAGE_EXECUTE_READWRITE
-05:31:00.5123877 [INFO] [create_trampoline] Trampoline function: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 41 f7 c1 00 00 fe 48 b8 98 1b d9 4b fb 7f 00 00 ff e0 00 00
-05:31:00.5125172 [INFO] [begin_hooking] Hooked GetMessageW successfully
-05:31:00.5125618 [INFO] [begin_hooking] Trampoline function address: 0x1FB8B100000
-05:31:00.5126003 [INFO] [begin_hooking] Hook function address: 0x7FFB46B83290
-05:31:03.916109 [INFO] [hook_func] lpMsg: 0xc96634fd48
+02:48:39.3779597 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
+02:48:39.3780679 [INFO] [DllMain] Base address of the DLL: 0x7ff8cd0b0000
+02:48:39.3781032 [INFO] [DllMain] Target module name: USER32.dll
+02:48:39.3781359 [INFO] [DllMain] Target function name: GetMessageW
+02:48:39.3781707 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FF8D3870000
+02:48:39.3782388 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FF8D3891B80
+02:48:39.3783021 [INFO] [begin_hooking] 15 bytes stolen from GetMessageW: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8
+02:48:39.3783547 [INFO] [create_trampoline] Trampoline function allocated at 0x1AF53E20000
+02:48:39.3783965 [INFO] [create_trampoline] Trampoline function protection changed to PAGE_EXECUTE_READWRITE
+02:48:39.378437 [INFO] [create_trampoline] Trampoline function: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 48 b8 8f 1b 89 d3 f8 7f 00 00 ff e0 00 00
+02:48:39.3784804 [INFO] [set_hook] Bytes written to target function: "48 b8 80 39 0b cd f8 7f 00 00 ff e0 00 00"
+02:48:39.3785265 [INFO] [begin_hooking] Hooked GetMessageW successfully
+02:48:39.3785631 [INFO] [begin_hooking] Trampoline function address: 0x1AF53E20000
+02:48:39.3785962 [INFO] [begin_hooking] Hook function address: 0x7FF8CD0B3980
+02:50:08.5328892 [INFO] [hook_func] Calling trampoline function: 0x1af53e20000
