@@ -37,3 +37,28 @@
 02:48:39.3795491 [INFO] [get_module_base_address] dll64.dll base address: 0x7ff8cd0b0000 in target process
 02:48:39.3796007 [INFO] [main] Validating handle to DLL that was loaded
 02:48:39.3796376 [INFO] [main] Valid DLL handle
+03:24:52.704895 [INFO] [get_function_offset] Retrieving handle to "kernel32.dll" module loaded in current process
+03:24:52.7050629 [INFO] [get_function_offset] "kernel32.dll" module handle: 0x7ff8d35d0000 in current_process
+03:24:52.7051342 [INFO] [get_function_offset] Retrieving address of "FreeLibrary" function in current process
+03:24:52.7052019 [INFO] [get_function_offset] "FreeLibrary" function address: 0x7ff8d35ecf50 in current process
+03:24:52.7053124 [INFO] [get_function_offset] Calculated offset of "FreeLibrary" function in "kernel32.dll" module: 0x1CF50
+03:24:52.7054077 [INFO] [get_function_addr] Calculating address of "FreeLibrary" in target process
+03:24:52.705481 [INFO] [get_function_addr] Address of "FreeLibrary" in target process: 0x7ff8d35ecf50
+03:24:52.7055501 [INFO] [main] Creating remote thread to call FreeLibrary and unload injected DLL
+03:24:52.7055882 [INFO] [create_remote_thread] Creating remote thread in target process (0xb0)
+03:24:52.7056725 [INFO] [create_remote_thread] Handle to remote thread: 0xb8
+03:24:52.7057165 [INFO] [main] Waiting for remote thread to finish execution of FreeLibrary
+03:25:00.0299581 [INFO] [main] Remote thread finished execution of FreeLibrary
+03:25:00.030025 [ERROR] [main] FreeLibrary failed
+03:25:00.0300692 [INFO] [get_module_base_address] Getting dll64.dll base address in target process
+03:25:00.0301447 [ERROR] [get_module_base_address] Failed to get module count
+03:25:00.0302077 [ERROR] [get_module_base_address] Windows error: Only part of a ReadProcessMemory or WriteProcessMemory request was completed.
+03:25:00.0302553 [ERROR] [main] Failed to get base address of dll64.dll: 299
+03:25:00.0303071 [ERROR] [main] Windows error: Only part of a ReadProcessMemory or WriteProcessMemory request was completed.
+03:25:00.0303531 [ERROR] [cleanup] Failed to free allocated memory at address: 0x1af53e10000
+03:25:00.0304031 [ERROR] [cleanup] Windows error: Access is denied.
+03:25:00.0304446 [INFO] [cleanup] Closing handle to thread: 0xb4
+03:25:00.0304868 [INFO] [cleanup] Waiting for thread: 0xb4 to finish execution
+03:25:00.0305331 [INFO] [cleanup] Thread with handle: 0xb4 has finished execution
+03:25:00.0305821 [INFO] [cleanup] Handle to thread: 0xb4 closed successfully
+03:25:00.0306338 [INFO] [cleanup] Target process handle: 0xb0 closed successfully
