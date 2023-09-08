@@ -40,7 +40,7 @@ use simplelog::*;
 use time::macros::format_description;
 use std::fs::File;
 
-const NUM_STOLEN_BYTES: usize = 15;
+const NUM_STOLEN_BYTES: usize = 18;
 
 static TRAMPOLINE_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
