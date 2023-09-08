@@ -12,10 +12,10 @@
 // _hinst_dll: This is the handle to the DLL instance. It's not used in this example, so we'll just ignore it.
 //
 // fdw_reason: This is the reason the function was called. It will be 1 (DLL_PROCESS_ATTACH) when the DLL is loaded and 0 (DLL_PROCESS_DETACH) when it's unloaded.
+#![allow(non_snake_case)]
+#![allow(unused_imports)]
 extern crate winapi;
 
-use winapi::um::winuser::{MessageBoxW, MB_OK};
-use std::f32::consts::E;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ffi::{OsStr, CString, CStr, OsString};
 use std::fmt;
@@ -23,6 +23,8 @@ use std::ptr;
 use std::iter::once;
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicPtr, Ordering};
+use std::arch::asm;
+use std::fs::File;
 
 use winapi::shared::windef::HWND;
 use winapi::shared::minwindef::{DWORD, HINSTANCE, FARPROC, BOOL};
@@ -35,14 +37,202 @@ use winapi::um::winuser::LPMSG;
 extern crate simplelog;
 extern crate log;
 
-use log::{info, warn, error};
+use log::{info, error};
 use simplelog::*;
 use time::macros::format_description;
-use std::fs::File;
+
 
 const NUM_STOLEN_BYTES: usize = 18;
 
 static TRAMPOLINE_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+
+#[repr(C)]
+#[cfg(target_pointer_width = "64")]
+struct Registers {
+    rax: u64,
+    rbx: u64,
+    rcx: u64,
+    rdx: u64,
+    rsi: u64,
+    rdi: u64,
+    rsp: u64,
+    r8: u64,
+    r9: u64,
+    r10: u64,
+    r11: u64,
+    r12: u64,
+    r13: u64,
+    r14: u64,
+}
+
+#[cfg(target_pointer_width = "64")]
+impl Registers {
+    fn new() -> Self {
+        let regs = Registers {
+            rax: 0,
+            rbx: 0,
+            rcx: 0,
+            rdx: 0,
+            rsi: 0,
+            rdi: 0,
+            rsp: 0,
+            r8: 0,
+            r9: 0,
+            r10: 0,
+            r11: 0,
+            r12: 0,
+            r13: 0,
+            r14: 0,
+        };
+        regs
+    }
+
+    fn store(&mut self) {
+        unsafe {
+            asm!(
+                "mov {0}, rax",
+                "mov {1}, rbx",
+                "mov {2}, rcx",
+                "mov {3}, rdx",
+                "mov {4}, rsi",
+                "mov {5}, rdi",
+                "mov {6}, rsp",
+                "mov {7}, r8",
+                "mov {8}, r9",
+                "mov {9}, r10",
+                "mov {10}, r11",
+                "mov {11}, r12",
+                "mov {12}, r13",
+                "mov {13}, r14",
+                out(reg) self.rax,
+                out(reg) self.rbx,
+                out(reg) self.rcx,
+                out(reg) self.rdx,
+                out(reg) self.rsi,
+                out(reg) self.rdi,
+                out(reg) self.rsp,
+                out(reg) self.r8,
+                out(reg) self.r9,
+                out(reg) self.r10,
+                out(reg) self.r11,
+                out(reg) self.r12,
+                out(reg) self.r13,
+                out(reg) self.r14,
+            );
+        }
+    }
+
+    fn restore(&mut self) {
+        unsafe {
+            asm!(
+                "mov rax, {0}",
+                "mov rbx, {1}",
+                "mov rcx, {2}",
+                "mov rdx, {3}",
+                "mov rsi, {4}",
+                "mov rdi, {5}",
+                "mov rsp, {6}",
+                "mov r8, {7}",
+                "mov r9, {8}",
+                "mov r10, {9}",
+                "mov r11, {10}",
+                "mov r12, {11}",
+                "mov r13, {12}",
+                "mov r14, {13}",
+                in(reg) self.rax,
+                in(reg) self.rbx,
+                in(reg) self.rcx,
+                in(reg) self.rdx,
+                in(reg) self.rsi,
+                in(reg) self.rdi,
+                in(reg) self.rsp,
+                in(reg) self.r8,
+                in(reg) self.r9,
+                in(reg) self.r10,
+                in(reg) self.r11,
+                in(reg) self.r12,
+                in(reg) self.r13,
+                in(reg) self.r14,
+            );
+        }
+    }
+}
+
+#[repr(C)]
+#[cfg(target_pointer_width = "32")]
+struct Registers {
+    eax: u32,
+    ebx: u32,
+    ecx: u32,
+    // edx: u32,
+    // esi: u32,
+    // edi: u32,
+    // ebp: u32,
+    // esp: u32,
+}
+
+#[cfg(target_pointer_width = "32")]
+impl Registers {
+    fn new() -> Self {
+        let regs = Registers {
+            eax: 0,
+            ebx: 0,
+            ecx: 0,
+            // edx: 0,
+            // esi: 0,
+            // edi: 0,
+            // ebp: 0,
+            // esp: 0,
+        };
+        regs
+    }
+
+    fn store(&mut self) {
+        unsafe {
+            asm!(
+                "mov {0}, eax",
+                "mov {1}, ebx",
+                "mov {2}, ecx",
+                // "mov {3}, edx",
+                // "mov {4}, esi",
+                // "mov {5}, edi",
+                // "mov {6}, ebp",
+                // "mov {7}, esp",
+                out(reg) self.eax,
+                out(reg) self.ebx,
+                out(reg) self.ecx,
+                // out(reg) self.edx,
+                // out(reg) self.esi,
+                // out(reg) self.edi,
+                // out(reg) self.ebp,
+                // out(reg) self.esp,
+            );
+        }
+    }
+
+    fn restore(&mut self) {
+        unsafe {
+            asm!(
+                "mov eax, {0}",
+                "mov ebx, {1}",
+                // "mov ecx, {2}",
+                // "mov edx, {3}",
+                // "mov esi, {4}",
+                // "mov edi, {5}",
+                // "mov ebp, {6}",
+                // "mov esp, {7}",
+                in(reg) self.eax,
+                in(reg) self.ebx,
+                // in(reg) self.ecx,
+                // in(reg) self.edx,
+                // in(reg) self.esi,
+                // in(reg) self.edi,
+                // in(reg) self.ebp,
+                // in(reg) self.esp,
+            );
+        }
+    }
+}
 
 #[cfg(target_os = "windows")]
 #[no_mangle]
@@ -386,8 +576,11 @@ pub extern "system" fn hook_func(
     wMsgFilterMin: UINT,
     wMsgFilterMax: UINT
 ) -> BOOL {
+    let mut registers = Registers::new();
+    registers.store();
+
     // Log the hook function
-    // info!("[{}] lpMsg: {:?}", "hook_func", lpMsg);
+    info!("[{}] Inside!", "hook_func");
 
     // Fetch the trampoline function from the global variable
     let trampoline: extern "system" fn(LPMSG, HWND, UINT, UINT) -> BOOL = unsafe {
@@ -396,6 +589,10 @@ pub extern "system" fn hook_func(
 
     // Call the trampoline function
     info!("[{}] Calling trampoline function: {:?}", "hook_func", TRAMPOLINE_FUNC);
+
+    // Restore the registers
+    registers.restore();
+
     trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax)
 }
 
