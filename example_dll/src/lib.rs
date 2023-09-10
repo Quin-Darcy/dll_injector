@@ -372,7 +372,7 @@ fn get_target_func_addr(target_module_str: &str, target_function_name: &str) -> 
 fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *const u8) -> Result<*mut u8, DWORD> {
     // Set the JMP instruction size depending on the target architecture
     #[cfg(target_pointer_width = "64")]
-    const JMP_INSTRUCTION_SIZE: usize = 14;
+    const JMP_INSTRUCTION_SIZE: usize = 15;
 
     #[cfg(target_pointer_width = "32")]
     const JMP_INSTRUCTION_SIZE: usize = 5;
@@ -410,28 +410,31 @@ fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *c
         {
             // 64-bit JMP instruction 
             // Assemble the machine code for:
-            // mov rax, target_address
-            // jmp rax
+            // mov r10, target_address
+            // jmp r10
 
-            // MOV RAX, IMM64 = 48 B8 [IMM64]
-            // 0x48 is a prefix indicating that the operation is using 64-bit operands
-            // 0xB8 is essentially telling the CPU that the next 8 bytes after the opcode are 
-            // the immediate value to be moved into RAX
-            let mov_rax = [0x48, 0xB8];
+            // We are using R10 as the register to store the target address
+            // because it is a non-volatile register, meaning it is not used by the target function
 
-            // JMP RAX = FF E0
-            let jmp_rax = [0xFF, 0xE0];
+            // MOV R10, IMM64 = 48 B8 [IMM64]
+            // 0x49 is a prefix indicating that the operation is using 64-bit operands using the R8-R15 registers
+            // 0xBA is essentially telling the CPU that the next 8 bytes after the opcode are 
+            // the immediate value to be moved into R10
+            let mov_r10 = [0x49, 0xBA];
+
+            // JMP R10 = 41 FF E2
+            let jmp_r10 = [0x41, 0xFF, 0xE2];
 
             // Calculate the target address for the jump back
             let target_address = (target_func_addr as usize) + NUM_STOLEN_BYTES;
             
             // Prepare the buffer for our instruction set
-            let mut instruction_set: [u8; 14] = [0; 14]; // 2 for MOV, 8 for target_address, 2 for JMP
+            let mut instruction_set: [u8; JMP_INSTRUCTION_SIZE] = [0; JMP_INSTRUCTION_SIZE]; // 2 for MOV, 8 for target_address, 2 for JMP
             
             // Copy the machine code into the buffer
-            instruction_set[0..2].copy_from_slice(&mov_rax);
+            instruction_set[0..2].copy_from_slice(&mov_r10);
             instruction_set[2..10].copy_from_slice(&target_address.to_le_bytes());
-            instruction_set[10..12].copy_from_slice(&jmp_rax);
+            instruction_set[10..13].copy_from_slice(&jmp_r10);
 
             // Write the instruction set to the trampoline
             ptr::copy(instruction_set.as_ptr(), trampoline.add(NUM_STOLEN_BYTES), instruction_set.len());
@@ -514,15 +517,15 @@ pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<
     unsafe {
         #[cfg(target_pointer_width = "64")]
         {
-            let mov_rax = [0x48, 0xB8];
-            let jmp_rax = [0xFF, 0xE0];
+            let mov_r10 = [0x48, 0xB8];
+            let jmp_r10 = [0xFF, 0xE0];
             let target_address = hook_func_addr as usize;
     
             let mut instruction_set: [u8; 14] = [0; 14];
             
-            instruction_set[0..2].copy_from_slice(&mov_rax);
+            instruction_set[0..2].copy_from_slice(&mov_r10);
             instruction_set[2..10].copy_from_slice(&target_address.to_le_bytes());
-            instruction_set[10..12].copy_from_slice(&jmp_rax);
+            instruction_set[10..12].copy_from_slice(&jmp_r10);
     
             ptr::copy(instruction_set.as_ptr(), jmp_instr.as_mut_ptr(), instruction_set.len());
         }
@@ -576,11 +579,8 @@ pub extern "system" fn hook_func(
     wMsgFilterMin: UINT,
     wMsgFilterMax: UINT
 ) -> BOOL {
-    let mut registers = Registers::new();
-    registers.store();
-
-    // Log the hook function
-    info!("[{}] Inside!", "hook_func");
+    //let mut registers = Registers::new();
+    //registers.store();
 
     // Fetch the trampoline function from the global variable
     let trampoline: extern "system" fn(LPMSG, HWND, UINT, UINT) -> BOOL = unsafe {
@@ -588,10 +588,10 @@ pub extern "system" fn hook_func(
     };
 
     // Call the trampoline function
-    info!("[{}] Calling trampoline function: {:?}", "hook_func", TRAMPOLINE_FUNC);
+    //info!("[{}] Calling trampoline function: {:?}", "hook_func", TRAMPOLINE_FUNC);
 
     // Restore the registers
-    registers.restore();
+    //registers.restore();
 
     trampoline(lpMsg, hWnd, wMsgFilterMin, wMsgFilterMax)
 }
