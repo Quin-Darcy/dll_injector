@@ -1,5 +1,7 @@
 #![allow(unused_imports)]
 #![allow(non_snake_case)]
+#![allow(unused_assignments)]
+#![allow(unused_variables)]
 
 use std::fs;
 use std::ptr::null_mut;
@@ -7,12 +9,13 @@ use std::ffi::{OsStr, CString, CStr, OsString};
 use std::iter::once;
 use std::os::windows::ffi::{OsStrExt, OsStringExt};
 use std::ptr;
-use std::io::{self, Read};
+use std::io::{self, Read, Seek, SeekFrom};
 use std::process::Command;
 use std::fs::File;
 use std::error::Error;
 use std::thread;
 use std::time::Duration;
+use std::path::Path;
 
 use winapi::um::processthreadsapi::{CreateProcessW, CreateRemoteThread, ResumeThread, SuspendThread, OpenProcess, GetExitCodeThread, STARTUPINFOW, PROCESS_INFORMATION};
 use winapi::um::winbase::CREATE_SUSPENDED;
@@ -46,12 +49,87 @@ extern crate log;
 use log::{info, warn, error};
 use simplelog::*;
 use time::macros::format_description;
+use clap::Parser;
 
 const PID_ARRAY_SIZE: usize = 1024;
 const PROCESS_NAME_SIZE: usize = 512;
-
 const WAIT_TIMEOUT: DWORD = 258;
 
+const IMAGE_DOS_SIGNATURE: u16 = 0x5A4D; // MZ
+const IMAGE_NT_SIGNATURE: u32 = 0x00004550; // PE\0\0
+
+// Offsets to various fields in the PE header
+const OFFSET_PE_SIGNATURE: u64 = 0x3C;
+const OFFSET_MACHINE: u64 = 0x4;
+
+// Machine types
+const IMAGE_FILE_MACHINE_I386: u16 = 0x014c;
+const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
+
+
+#[derive(Parser, Default, Debug)]
+#[command(name = "dll_injector")]
+#[command(author = "Quin Darcy")]
+#[command(version = "0.1.0")]
+#[command(
+    help_template = "\n\n{name} \n{author-with-newline}Version: {version}{about-section} \n {usage-heading} {usage} \n\n {all-args} {tab}"
+)]
+#[command(about, long_about = None)]
+/// A simple DLL injector
+struct Cli {
+    #[arg(short = 'n', long = "process_name")]
+    /// The name of the process to inject into
+    process_name: Option<String>, 
+    
+    #[arg(short, long)]
+    /// The PID of the process to inject into
+    pid: Option<u32>,
+
+    #[arg(short, long)]
+    /// The path to the DLL to inject
+    dll_path: Option<String>,
+}
+
+impl Cli {
+    pub fn validate_process_args(&self) -> Result<(), String> {
+        // Check if the user has specified both a process name and a PID
+        if self.process_name.is_some() && self.pid.is_some() {
+            return Err("ArgumentConflict: You cannot specify both a process name and a PID.".to_string());
+        }
+        
+        // Check if the user has specified neither a process name nor a PID
+        if self.process_name.is_none() && self.pid.is_none() {
+            return Err("MissingArguments: Either a process name or a PID must be specified.".to_string());
+        }
+
+        // Check if the user has specified a DLL path
+        if self.dll_path.is_none() {
+            return Err("MissingArguments: The path to the DLL must be specified.".to_string());
+        }
+
+         // Check if the PID exists
+        if self.pid.is_some() {
+            unsafe {
+                let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, self.pid.unwrap());
+                if process_handle.is_null() {
+                    return Err(format!("InvalidArgument: The PID '{}' does not exist.", self.pid.unwrap()));
+                } else {
+                    // Close the handle
+                    winapi::um::handleapi::CloseHandle(process_handle);
+                }
+            }
+        }
+
+        // Check if the DLL path exists
+        if let Some(dll_path) = &self.dll_path {
+            if !Path::new(dll_path).exists() {
+                return Err(format!("InvalidArgument: The DLL path '{}' does not exist.", dll_path));
+            }
+        }
+
+        Ok(())
+    }
+}
 
 // Utility function to get the last error
 fn get_last_error() -> Option<String> {
@@ -187,6 +265,104 @@ fn cleanup(
     }
 }
 
+// Determine if DLL is 32-bit or 64-bit or invalid
+fn get_dll_bitness(path: &str) -> io::Result<String> {
+    let mut file = File::open(path)?;
+
+    // Read DOS header and check its signature
+    let mut dos_sig_buf = [0u8; 2];
+    file.read_exact(&mut dos_sig_buf)?;
+    let dos_sig = u16::from_le_bytes(dos_sig_buf);
+    if dos_sig != IMAGE_DOS_SIGNATURE {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid DOS signature"));
+    }
+
+    // Read the PE header offset from the DOS header and seek to it
+    file.seek(SeekFrom::Start(OFFSET_PE_SIGNATURE))?;
+    let mut pe_offset_buf = [0u8; 4];
+    file.read_exact(&mut pe_offset_buf)?;
+    let pe_offset = u32::from_le_bytes(pe_offset_buf);
+
+    // Read and check the PE signature
+    file.seek(SeekFrom::Start(u64::from(pe_offset)))?;
+    let mut pe_sig_buf = [0u8; 4];
+    file.read_exact(&mut pe_sig_buf)?;
+    let pe_sig = u32::from_le_bytes(pe_sig_buf);
+    if pe_sig != IMAGE_NT_SIGNATURE {
+        return Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid PE signature"));
+    }
+
+    // Read the Machine field from the PE header
+    file.seek(SeekFrom::Start(u64::from(pe_offset) + OFFSET_MACHINE))?;
+    let mut machine_buf = [0u8; 2];
+    file.read_exact(&mut machine_buf)?;
+    let machine = u16::from_le_bytes(machine_buf);
+
+    match machine {
+        IMAGE_FILE_MACHINE_I386 => Ok("32-bit".to_string()),
+        IMAGE_FILE_MACHINE_AMD64 => Ok("64-bit".to_string()),
+        _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Unknown machine type")),
+    }
+}
+
+// This function will return the name of a process given its process ID
+fn get_proc_name(process_id: u32) -> Result<String, String> {
+    // Initialize variable to store reason for failure
+    let mut err_msg: String = String::new();
+
+    // Check if the process ID is 0. If it is, skip it as this means the process is not valid
+    if process_id != 0 {
+        // Initialize the handle which will be used to store the process handle
+        let handle: HANDLE = unsafe {
+            OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, process_id)
+        };
+
+        // Check if the handle is null. If it is, skip it as this means the process is not valid
+        if handle.is_null() {
+            if let Some(win_err) = get_last_error() {
+                err_msg = win_err.trim().to_string();
+            }
+            return Err(err_msg);
+        }
+
+        // Initialize the process name array which will be used to store the process name
+        let mut process_name = [0u8; PROCESS_NAME_SIZE];
+        let name_len = unsafe {
+            GetModuleBaseNameA(handle, null_mut(), process_name.as_mut_ptr() as *mut i8, PROCESS_NAME_SIZE as u32)
+        };
+
+        // Check if the name length is 0. If it is, skip it as this means the process is not valid
+        if name_len == 0 {
+            if let Some(win_err) = get_last_error() {
+                err_msg = win_err.trim().to_string();
+                error!("[{}] Failed to get module base name: {}", "get_proc_name", win_err.trim());
+            }
+            return Err(err_msg);
+        }
+
+        // Convert the process name to a string
+        let name = String::from_utf8_lossy(&process_name[0..name_len as usize]).to_string();
+
+        // Close the process handle
+        let success = unsafe { winapi::um::handleapi::CloseHandle(handle) };
+
+        // Check if the handle was successfully closed
+        if success == 0 {
+            if let Some(win_err) = get_last_error() {
+                err_msg = win_err.trim().to_string();
+                error!("[{}] Failed to close handle to {} ({}): {}", "get_proc_name", name, process_id, win_err.trim());
+            }
+            return Err(err_msg);
+        }
+
+        // Return the process name
+        return Ok(name);
+    } else {
+        return Err("Process ID is 0".to_string());
+    }
+}
+
+
 // This function will return a list of tuples containing the process ID and name of each running process
 fn get_running_procs() -> Result<Vec<(u32, String)>, DWORD> {
     // Initialize the process info vector
@@ -212,7 +388,7 @@ fn get_running_procs() -> Result<Vec<(u32, String)>, DWORD> {
         if let Some(win_err) = get_last_error() {
             error!("[{}] Failed to enumerate processes: {}", "get_running_procs", win_err.trim());
         }
-        return Err(unsafe { winapi::um::errhandlingapi::GetLastError() });
+        return Err(0);
     } else {
         num_processes = cb_needed as usize / std::mem::size_of::<u32>();
         info!("[{}] Bytes returned: {} bytes", "get_running_procs", cb_needed);
@@ -231,50 +407,17 @@ fn get_running_procs() -> Result<Vec<(u32, String)>, DWORD> {
     for i in 0..num_processes {
         let process_id = process_ids[i];
 
-        // Check if the process ID is 0. If it is, skip it as this means the process is not valid
-        if process_id != 0 {
-            // Initialize the handle which will be used to store the process handle
-            let handle: HANDLE = unsafe {
-                OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, process_id)
-            };
-
-            // Check if the handle is null. If it is, skip it as this means the process is not valid
-            if handle.is_null() {
-                if let Some(win_err) = get_last_error() {
-                    last_err = win_err.trim().to_string();
+        // Attempt to get the name of the process
+        match get_proc_name(process_id) {
+            Ok(name) => {
+                // If the name is not empty, add it to the process info vector
+                if !name.is_empty() {
+                    proc_info.push((process_id, name));
                 }
+            },
+            Err(e) => {
                 num_failed += 1;
-                continue;
-            }
-
-            // Initialize the process name array which will be used to store the process name
-            let mut process_name = [0u8; PROCESS_NAME_SIZE];
-            let name_len = unsafe {
-                GetModuleBaseNameA(handle, null_mut(), process_name.as_mut_ptr() as *mut i8, PROCESS_NAME_SIZE as u32)
-            };
-
-            // Check if the name length is 0. If it is, skip it as this means the process is not valid
-            if name_len == 0 {
-                if let Some(win_err) = get_last_error() {
-                    error!("[{}] Failed to get module base name: {}", "get_running_procs", win_err.trim());
-                }
-                continue;
-            }
-
-            // Convert the process name to a string
-            let name = String::from_utf8_lossy(&process_name[0..name_len as usize]).to_string();
-
-            // Push the process ID and name to the process info vector
-            proc_info.push((process_id, name.clone()));
-
-            // Close the process handle
-            let success = unsafe { winapi::um::handleapi::CloseHandle(handle) };
-
-            // Check if the handle was successfully closed
-            if success == 0 {
-                if let Some(win_err) = get_last_error() {
-                    error!("[{}] Failed to close handle to {} ({}): {}", "get_running_procs", name, process_id, win_err.trim());
-                }
+                last_err = e;
             }
         }
     }
@@ -635,64 +778,42 @@ fn main() {
 
     let _ = WriteLogger::init(LevelFilter::Info, config, File::create("injector.log").expect("Failed to initialize logger"));
 
-    // Check if user has provided the correct number of arguments
-    // USAGE: injector.exe <target_process_name> <path to 32-bit DLL> <path to 64-bit DLL>
-    let args: Vec<String> = std::env::args().collect();
-    if args.len() != 4 {
-        error!("[{}] Invalid number of arguments supplied to injector", "main");
-        return;
-    }
+    // Get the command line arguments
+    let args = Cli::parse();
 
-    // Store the target process name
-    let target_proc_name = args[1].clone();
-    let dll32_path = args[2].clone();
-    let dll64_path = args[3].clone();
-    
-    // This will be the default DLL path
-    let mut dll_path: String = dll64_path;
+    // =================== BEGIN INPUT VALIDATION ===================
 
-    // Get the list of running processes
-    let proc_info: Vec<(u32, String)> = match get_running_procs() {
-        Ok(info) => info,
+    // Perform some basic validation on the arguments
+    let _result = match args.validate_process_args() {
+        Ok(_) => (),
         Err(err) => {
-            error!("[{}] Failed to get running processes: {}", "main", err);
+            error!("[{}] {}", "main", err);
             return;
         }
     };
 
-    // Check if the target process is running
-    let target_proc_id: u32 = match is_target_running(&proc_info, &target_proc_name) {
-        Some(id) => id,
-        None => {
-            error!("[{}] Target process is not running", "main");
-            return;
-        }
-    };
-
-    // Get a handle to the target process
-    let target_proc_handle: HANDLE = match get_target_proc_handle(target_proc_id) {
-        Ok(handle) => handle,
-        Err(err) => {
-            error!("[{}] Failed to get handle to target process: {}", "main", err);
-            return;
-        }
-    };
-
-    // Check if target process is 32-bit or 64-bit
-    let mut is_wow64: i32 = 0;
-    unsafe {
-        if IsWow64Process(target_proc_handle, &mut is_wow64) != 0 {
-            if is_wow64 != 0 {
-                info!("[{}] Target process is 32-bit", "main");
-                info!("[{}] Using 32-bit DLL", "main");
-                dll_path = dll32_path;
-            } else {
-                info!("[{}] Target process is 64-bit", "main");
-                info!("[{}] Using 64-bit DLL", "main");
+    // Get the bitness of the DLL and store the path
+    let mut dll_bitness: u32 = 0;
+    let mut dll_path: String = String::new();
+    if let Some(path) = args.dll_path {
+        dll_path = path;
+        match get_dll_bitness(&dll_path) {
+            Ok(bitness) => {
+                if bitness == "32-bit" {
+                    info!("[{}] DLL is 32-bit", "main");
+                    dll_bitness = 32;
+                } else if bitness == "64-bit" {
+                    info!("[{}] DLL is 64-bit", "main");
+                    dll_bitness = 64;
+                } else {
+                    error!("[{}] Invalid DLL bitness: {}", "main", bitness);
+                    return;
+                }
+            },
+            Err(e) => {
+                error!("[{}] Failed to get DLL bitness: {}", "main", e);
+                return;
             }
-        } else {
-            error!("[{}] Failed to determine bitness of target process", "main");
-            return;
         }
     }
 
@@ -728,6 +849,90 @@ fn main() {
     } else {
         dll_path.to_string()
     };
+
+    // Get target process information (name and PID)
+    let mut target_proc_id: u32 = 0;
+    let mut target_proc_name: String = String::new();
+    if let Some(proc_name) = args.process_name {
+        // Store the target process name
+        target_proc_name = proc_name.clone();
+
+        // Get the list of running processes
+        let proc_info: Vec<(u32, String)> = match get_running_procs() {
+            Ok(info) => info,
+            Err(err) => {
+                error!("[{}] Failed to get running processes: {}", "main", err);
+                return;
+            }
+        };
+
+        // Check if the target process is running and get the process ID
+        target_proc_id = match is_target_running(&proc_info, &proc_name) {
+            Some(id) => id,
+            None => {
+                error!("[{}] {} is not running", "main", proc_name);
+                return;
+            }
+        };
+    } else if let Some(proc_id) = args.pid {
+        // Store the target process ID
+        target_proc_id = proc_id;
+
+        // Get the name of the target process
+        target_proc_name = match get_proc_name(proc_id) {
+            Ok(name) => name,
+            Err(err) => {
+                error!("[{}] Failed to get process name: {}", "main", err);
+                return;
+            }
+        };
+    }
+
+    // Get a handle to the target process
+    let target_proc_handle: HANDLE = match get_target_proc_handle(target_proc_id) {
+        Ok(handle) => handle,
+        Err(err) => {
+            error!("[{}] Failed to get handle to target process: {}", "main", err);
+            return;
+        }
+    };
+
+    // Get bitness of target process
+    let mut is_wow64: i32 = 0;
+    let mut target_proc_bitness: u32 = 0;
+    unsafe {
+        if IsWow64Process(target_proc_handle, &mut is_wow64) != 0 {
+            if is_wow64 != 0 {
+                info!("[{}] Target process is 32-bit", "main");
+                target_proc_bitness = 32;
+            } else {
+                info!("[{}] Target process is 64-bit", "main");
+                target_proc_bitness = 64;
+            }
+        } else {
+            error!("[{}] Failed to determine bitness of target process", "main");
+            cleanup(Some(target_proc_handle), None, None, None);
+            return;
+        }
+    }
+
+    // Check if the bitness of the DLL and target process match
+    if dll_bitness != target_proc_bitness {
+        error!("[{}] DLL bitness ({}) does not match target process bitness ({})", "main", dll_bitness, target_proc_bitness);
+        cleanup(Some(target_proc_handle), None, None, None);
+        return;
+    }
+
+    // =================== END INPUT VALIDATION ===================
+
+    // At this point we have aquired and validated the following information:
+    // - Process name
+    // - Process ID
+    // - Process handle
+    // - Process bitness
+    // - DLL path
+    // - DLL bitness
+
     
     // Next, we will allocate memory in the process by calling the allocate_memory function
     // This function will return a pointer to the allocated memory which we will use later
