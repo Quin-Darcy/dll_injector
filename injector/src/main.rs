@@ -1116,107 +1116,109 @@ fn main() {
         }
     }
 
-    // Wait for user input before unloading the DLL
-    let mut input = String::new();
-    io::stdin().read_line(&mut input).unwrap();
+    // Testing self-unloading DLL and so commenting out the cleanup code below
 
-    // Now that the DLL has been loaded into the target process, we can clean up by unloading the DLL
+    // // Wait for user input before unloading the DLL
+    // let mut input = String::new();
+    // io::stdin().read_line(&mut input).unwrap();
 
-    // First, we need to get the offset of FreeLibrary
-    let freelib_str: &str = "FreeLibrary";
-    let freelib_offset: usize = match get_function_offset(kernel32_str, freelib_str) {
-        Ok(freelib_offset) => freelib_offset,
-        Err(e) => {
-            error!("[{}] Failed to get offset of {:?} function: {}", "main", freelib_str, e);
-            if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "main", win_err.trim());
-            }
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
-            return;
-        }
-    };
+    // // Now that the DLL has been loaded into the target process, we can clean up by unloading the DLL
+
+    // // First, we need to get the offset of FreeLibrary
+    // let freelib_str: &str = "FreeLibrary";
+    // let freelib_offset: usize = match get_function_offset(kernel32_str, freelib_str) {
+    //     Ok(freelib_offset) => freelib_offset,
+    //     Err(e) => {
+    //         error!("[{}] Failed to get offset of {:?} function: {}", "main", freelib_str, e);
+    //         if let Some(win_err) = get_last_error() {
+    //             error!("[{}] Windows error: {}", "main", win_err.trim());
+    //         }
+    //         cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+    //         return;
+    //     }
+    // };
     
-    // Here we are calculating the address of FreeLibrary by adding the base address of kernel32.dll with respect to the target process
-    let freelib_addr: *const c_void = match get_function_addr(target_kernel32_base_addr, freelib_offset, freelib_str) {
-        Ok(freelib_addr) => freelib_addr,
-        Err(e) => {
-            error!("[{}] Failed to calculate address of {:?}: {}", "main", freelib_str, e);
-            if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "main", win_err.trim());
-            }
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
-            return;
-        }
-    };
+    // // Here we are calculating the address of FreeLibrary by adding the base address of kernel32.dll with respect to the target process
+    // let freelib_addr: *const c_void = match get_function_addr(target_kernel32_base_addr, freelib_offset, freelib_str) {
+    //     Ok(freelib_addr) => freelib_addr,
+    //     Err(e) => {
+    //         error!("[{}] Failed to calculate address of {:?}: {}", "main", freelib_str, e);
+    //         if let Some(win_err) = get_last_error() {
+    //             error!("[{}] Windows error: {}", "main", win_err.trim());
+    //         }
+    //         cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+    //         return;
+    //     }
+    // };
     
-    // Create a remote thread to call FreeLibrary
-    info!("[{}] Creating remote thread to call {} and unload injected DLL", "main", freelib_str);
-    let unload_dll_thread_handle = match create_remote_thread(target_proc_handle, unsafe { std::mem::transmute(freelib_addr) }, injected_dll_base_addr as *mut c_void) {
-        Ok(thread_id) => thread_id,
-        Err(e) => {
-            error!("[{}] Failed to create remote thread for {}: {}", "main", freelib_str, e);
-            if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "main", win_err.trim());
-            }
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
-            return;
-        }
-    };
+    // // Create a remote thread to call FreeLibrary
+    // info!("[{}] Creating remote thread to call {} and unload injected DLL", "main", freelib_str);
+    // let unload_dll_thread_handle = match create_remote_thread(target_proc_handle, unsafe { std::mem::transmute(freelib_addr) }, injected_dll_base_addr as *mut c_void) {
+    //     Ok(thread_id) => thread_id,
+    //     Err(e) => {
+    //         error!("[{}] Failed to create remote thread for {}: {}", "main", freelib_str, e);
+    //         if let Some(win_err) = get_last_error() {
+    //             error!("[{}] Windows error: {}", "main", win_err.trim());
+    //         }
+    //         cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+    //         return;
+    //     }
+    // };
 
-    // Here we need to wait for the remote thread to finish its execution of FreeLibrary
-    info!("[{}] Waiting for remote thread to finish execution of {}", "main", freelib_str);
-    let wait_result = unsafe { WaitForSingleObject(unload_dll_thread_handle, winapi::um::winbase::INFINITE) };
-    if wait_result != WAIT_OBJECT_0 {
-        error!("[{}] Failed to wait for remote thread to finish", "main");
-        if let Some(win_err) = get_last_error() {
-            error!("[{}] Windows error: {}", "main", win_err.trim());
-        }
-        cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
-        return;
-    }
-    info!("[{}] Remote thread finished execution of {}", "main", freelib_str);
+    // // Here we need to wait for the remote thread to finish its execution of FreeLibrary
+    // info!("[{}] Waiting for remote thread to finish execution of {}", "main", freelib_str);
+    // let wait_result = unsafe { WaitForSingleObject(unload_dll_thread_handle, winapi::um::winbase::INFINITE) };
+    // if wait_result != WAIT_OBJECT_0 {
+    //     error!("[{}] Failed to wait for remote thread to finish", "main");
+    //     if let Some(win_err) = get_last_error() {
+    //         error!("[{}] Windows error: {}", "main", win_err.trim());
+    //     }
+    //     cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
+    //     return;
+    // }
+    // info!("[{}] Remote thread finished execution of {}", "main", freelib_str);
 
-    // Check exit code of remote thread to confirm that FreeLibrary was successful
-    let mut freelib_exitcode: DWORD = 0;
-    let success = unsafe { GetExitCodeThread(unload_dll_thread_handle, &mut freelib_exitcode) };
-    if success == 0 {
-        error!("[{}] GetExitCodeThread failed", "main");
-        if let Some(win_err) = get_last_error() {
-            error!("[{}] Windows error: {}", "main", win_err.trim());
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
-            return;
-        }
-    } else {
-        if freelib_exitcode == 0 {
-            error!("[{}] {} failed", "main", freelib_str);
-            if let Some(win_err) = get_last_error() {
-                error!("[{}] Windows error: {}", "main", win_err.trim());
-                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
-                return;
-            }
-        }
-    }
+    // // Check exit code of remote thread to confirm that FreeLibrary was successful
+    // let mut freelib_exitcode: DWORD = 0;
+    // let success = unsafe { GetExitCodeThread(unload_dll_thread_handle, &mut freelib_exitcode) };
+    // if success == 0 {
+    //     error!("[{}] GetExitCodeThread failed", "main");
+    //     if let Some(win_err) = get_last_error() {
+    //         error!("[{}] Windows error: {}", "main", win_err.trim());
+    //         cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
+    //         return;
+    //     }
+    // } else {
+    //     if freelib_exitcode == 0 {
+    //         error!("[{}] {} failed", "main", freelib_str);
+    //         if let Some(win_err) = get_last_error() {
+    //             error!("[{}] Windows error: {}", "main", win_err.trim());
+    //             cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
+    //             return;
+    //         }
+    //     }
+    // }
 
-    // Confirmed that the DLL was unloaded successfully
-    match get_module_base_address(target_proc_handle, dll_file_name) {
-        Ok(_) => {
-            error!("[{}] Failed to unload DLL", "main");
-            cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
-            return;
-        },
-        Err(e) => {
-            if e == 404 {
-                info!("[{}] DLL unloaded successfully", "main");
-            } else {
-                error!("[{}] Failed to get base address of {}: {}", "main", dll_file_name, e);
-                if let Some(win_err) = get_last_error() {
-                    error!("[{}] Windows error: {}", "main", win_err.trim());
-                }
-                cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
-                return;
-            }
-        }
-    };
+    // // Confirmed that the DLL was unloaded successfully
+    // match get_module_base_address(target_proc_handle, dll_file_name) {
+    //     Ok(_) => {
+    //         error!("[{}] Failed to unload DLL", "main");
+    //         cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
+    //         return;
+    //     },
+    //     Err(e) => {
+    //         if e == 404 {
+    //             info!("[{}] DLL unloaded successfully", "main");
+    //         } else {
+    //             error!("[{}] Failed to get base address of {}: {}", "main", dll_file_name, e);
+    //             if let Some(win_err) = get_last_error() {
+    //                 error!("[{}] Windows error: {}", "main", win_err.trim());
+    //             }
+    //             cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
+    //             return;
+    //         }
+    //     }
+    // };
 
-    cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), Some(unload_dll_thread_handle));
+    cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
 }

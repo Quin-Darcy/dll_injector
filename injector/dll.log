@@ -1,14 +1,36 @@
-04:54:47.1332235 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
-04:54:47.1333129 [INFO] [DllMain] Base address of the DLL: 0x7ff9514c0000
-04:54:47.1333481 [INFO] [DllMain] Target module name: USER32.dll
-04:54:47.133381 [INFO] [DllMain] Target function name: GetMessageW
-04:54:47.1334208 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FF956720000
-04:54:47.1334858 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FF956741B80
-04:54:47.1335493 [INFO] [begin_hooking] 18 bytes stolen from GetMessageW: 48 b8 80 39 ee 48 f9 7f 00 00 ff e0 00 00 c8 44 0b c8
-04:54:47.1335976 [INFO] [create_trampoline] Trampoline function allocated at 0x1E32F230000
-04:54:47.1336739 [INFO] [create_trampoline] Trampoline function protection changed to PAGE_EXECUTE_READWRITE
-04:54:47.1337178 [INFO] [create_trampoline] Trampoline function: 48 b8 80 39 ee 48 f9 7f 00 00 ff e0 00 00 c8 44 0b c8 49 ba 92 1b 74 56 f9 7f 00 00 41 ff e2 00 00
-04:54:47.133848 [INFO] [set_hook] Bytes written to target function: "48 b8 80 39 4c 51 f9 7f 00 00 ff e0 00 00"
-04:54:47.1339923 [INFO] [begin_hooking] Hooked GetMessageW successfully
-04:54:47.1340724 [INFO] [begin_hooking] Trampoline function address: 0x1E32F230000
-04:54:47.1341123 [INFO] [begin_hooking] Hook function address: 0x7FF9514C3980
+04:57:07.7390689 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
+04:57:07.7391613 [INFO] [DllMain] Base address of the DLL: 0x7ff9af010000
+04:57:07.739201 [INFO] [DllMain] Target module name: USER32.dll
+04:57:07.7392366 [INFO] [DllMain] Target function name: GetMessageW
+04:57:07.7393439 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FF9C5180000
+04:57:07.739415 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FF9C51A1B80
+04:57:07.739523 [INFO] [begin_hooking] 18 bytes stolen from GetMessageW: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8
+04:57:07.7395891 [INFO] [create_trampoline] Trampoline function allocated at 0x1CF06BF0000
+04:57:07.7398712 [INFO] [create_trampoline] Trampoline function protection changed to PAGE_EXECUTE_READWRITE
+04:57:07.7399303 [INFO] [create_trampoline] Trampoline function: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 49 ba 92 1b 1a c5 f9 7f 00 00 41 ff e2 00 00
+04:57:07.7400549 [INFO] [set_hook] Bytes written to target function: "48 b8 50 3c 01 af f9 7f 00 00 ff e0 00 00"
+04:57:07.7401066 [INFO] [begin_hooking] Hooked GetMessageW successfully
+04:57:07.74017 [INFO] [begin_hooking] Trampoline function address: 0x1CF06BF0000
+04:57:07.7402618 [INFO] [begin_hooking] Hook function address: 0x7FF9AF013C50
+04:57:14.9193457 [INFO] [log_key] Translated character:  
+04:57:15.3892778 [INFO] [log_key] Translated character: t
+04:57:15.4832397 [INFO] [log_key] Translated character: h
+04:57:15.6333215 [INFO] [log_key] Translated character: i
+04:57:15.7441639 [INFO] [log_key] Translated character: s
+04:57:15.8551618 [INFO] [log_key] Translated character:  
+04:57:16.0012601 [INFO] [log_key] Translated character: i
+04:57:16.0232274 [INFO] [log_key] Translated character: s
+04:57:16.1913559 [INFO] [log_key] Translated character:  
+04:57:16.5584197 [INFO] [log_key] Translated character: a
+04:57:16.6564038 [INFO] [log_key] Translated character: n
+04:57:16.7974024 [INFO] [log_key] Translated character: o
+04:57:16.8921599 [INFO] [log_key] Translated character: t
+04:57:17.0421916 [INFO] [log_key] Translated character: h
+04:57:17.0901841 [INFO] [log_key] Translated character: e
+04:57:17.1754343 [INFO] [log_key] Translated character: r
+04:57:17.3352748 [INFO] [log_key] Translated character:  
+04:57:17.8254275 [INFO] [log_key] Translated character: t
+04:57:17.9062609 [INFO] [log_key] Translated character: e
+04:57:17.9573256 [INFO] [log_key] Translated character: s
+04:57:18.0282059 [INFO] [log_key] Translated character: t
+04:59:02.7818469 [INFO] [unload] Unload file found
