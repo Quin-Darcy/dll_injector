@@ -1,36 +1,33 @@
-04:57:07.7390689 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
-04:57:07.7391613 [INFO] [DllMain] Base address of the DLL: 0x7ff9af010000
-04:57:07.739201 [INFO] [DllMain] Target module name: USER32.dll
-04:57:07.7392366 [INFO] [DllMain] Target function name: GetMessageW
-04:57:07.7393439 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FF9C5180000
-04:57:07.739415 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FF9C51A1B80
-04:57:07.739523 [INFO] [begin_hooking] 18 bytes stolen from GetMessageW: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8
-04:57:07.7395891 [INFO] [create_trampoline] Trampoline function allocated at 0x1CF06BF0000
-04:57:07.7398712 [INFO] [create_trampoline] Trampoline function protection changed to PAGE_EXECUTE_READWRITE
-04:57:07.7399303 [INFO] [create_trampoline] Trampoline function: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 49 ba 92 1b 1a c5 f9 7f 00 00 41 ff e2 00 00
-04:57:07.7400549 [INFO] [set_hook] Bytes written to target function: "48 b8 50 3c 01 af f9 7f 00 00 ff e0 00 00"
-04:57:07.7401066 [INFO] [begin_hooking] Hooked GetMessageW successfully
-04:57:07.74017 [INFO] [begin_hooking] Trampoline function address: 0x1CF06BF0000
-04:57:07.7402618 [INFO] [begin_hooking] Hook function address: 0x7FF9AF013C50
-04:57:14.9193457 [INFO] [log_key] Translated character:  
-04:57:15.3892778 [INFO] [log_key] Translated character: t
-04:57:15.4832397 [INFO] [log_key] Translated character: h
-04:57:15.6333215 [INFO] [log_key] Translated character: i
-04:57:15.7441639 [INFO] [log_key] Translated character: s
-04:57:15.8551618 [INFO] [log_key] Translated character:  
-04:57:16.0012601 [INFO] [log_key] Translated character: i
-04:57:16.0232274 [INFO] [log_key] Translated character: s
-04:57:16.1913559 [INFO] [log_key] Translated character:  
-04:57:16.5584197 [INFO] [log_key] Translated character: a
-04:57:16.6564038 [INFO] [log_key] Translated character: n
-04:57:16.7974024 [INFO] [log_key] Translated character: o
-04:57:16.8921599 [INFO] [log_key] Translated character: t
-04:57:17.0421916 [INFO] [log_key] Translated character: h
-04:57:17.0901841 [INFO] [log_key] Translated character: e
-04:57:17.1754343 [INFO] [log_key] Translated character: r
-04:57:17.3352748 [INFO] [log_key] Translated character:  
-04:57:17.8254275 [INFO] [log_key] Translated character: t
-04:57:17.9062609 [INFO] [log_key] Translated character: e
-04:57:17.9573256 [INFO] [log_key] Translated character: s
-04:57:18.0282059 [INFO] [log_key] Translated character: t
-04:59:02.7818469 [INFO] [unload] Unload file found
+03:21:39.762368 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
+03:21:39.7624594 [INFO] [DllMain] Base address of the DLL: 0x7fffe40d0000
+03:21:39.7624957 [INFO] [DllMain] Target module name: USER32.dll
+03:21:39.7625924 [INFO] [DllMain] Target function name: GetMessageW
+03:21:39.7626312 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FFFEF080000
+03:21:39.7628764 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FFFEF0A1BE0
+03:21:39.7630101 [INFO] [setup] 18 bytes stolen from GetMessageW: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8
+03:21:39.7631678 [INFO] [create_trampoline] Trampoline function allocated at 0x19668020000
+03:21:39.7632101 [INFO] [create_trampoline] Trampoline function protection changed to PAGE_EXECUTE_READWRITE
+03:21:39.7632878 [INFO] [create_trampoline] Trampoline function: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 49 ba f2 1b 0a ef ff 7f 00 00 41 ff e2 00 00
+03:21:39.7633228 [INFO] [DllMain] Spawning thread for hook installation
+03:21:39.763413 [INFO] [DllMain] Spawning thread for cleanup
+03:21:39.7637601 [INFO] [set_hook] Bytes written to target function: "48 b8 20 4c 0d e4 ff 7f 00 00 ff e0 00 00"
+03:21:39.7638139 [INFO] [install_hook] Hooked GetMessageW successfully
+03:21:39.7638509 [INFO] [install_hook] Trampoline function address: 0x19668020000
+03:21:39.7638848 [INFO] [install_hook] Hook function address: 0x7FFFE40D4C20
+03:21:39.7639174 [INFO] [install_hook] Unlocking mutex
+03:24:01.9976777 [INFO] [log_key] Translated character: t
+03:24:02.3018635 [INFO] [log_key] Translated character: h
+03:24:02.4716292 [INFO] [log_key] Translated character: i
+03:24:02.5626877 [INFO] [log_key] Translated character: s
+03:24:02.6709177 [INFO] [log_key] Translated character:  
+03:24:02.8246627 [INFO] [log_key] Translated character: i
+03:24:02.9265201 [INFO] [log_key] Translated character: s
+03:24:03.0415203 [INFO] [log_key] Translated character:  
+03:24:03.2275577 [INFO] [log_key] Translated character: a
+03:24:03.4259515 [INFO] [log_key] Translated character: a
+03:24:04.7116984 [INFO] [log_key] Translated character:  
+03:24:04.9148335 [INFO] [log_key] Translated character: t
+03:24:05.0136005 [INFO] [log_key] Translated character: e
+03:24:05.0776699 [INFO] [log_key] Translated character: s
+03:24:05.1596025 [INFO] [log_key] Translated character: t
+04:14:52.7604219 [INFO] [cleanup] Cleanup file found - Cleaning up ...

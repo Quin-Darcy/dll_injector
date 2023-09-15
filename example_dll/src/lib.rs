@@ -26,11 +26,12 @@ use std::sync::atomic::{AtomicPtr, Ordering};
 use std::arch::asm;
 use std::fs::File;
 use std::thread;
+use std::sync::{Arc, Mutex};
 
 use winapi::shared::windef::{HWND, POINT};
 use winapi::shared::minwindef::{DWORD, HINSTANCE, FARPROC, BOOL, UINT, WPARAM, LPARAM};
 use winapi::um::errhandlingapi::GetLastError;
-use winapi::um::memoryapi::{VirtualAlloc, VirtualProtect};
+use winapi::um::memoryapi::{VirtualAlloc, VirtualProtect, VirtualFree};
 use winapi::shared::minwindef::HINSTANCE__;
 use winapi::um::winnt::{MEM_COMMIT, PAGE_EXECUTE_READWRITE};
 use winapi::um::winuser::{LPMSG, WM_KEYDOWN, MapVirtualKeyW};
@@ -45,7 +46,7 @@ use time::macros::format_description;
 
 
 const NUM_STOLEN_BYTES: usize = 18;
-const UNLOAD_FILE_PATH: &str = "C:\\Users\\User\\Music\\test.txt";
+const CLEANUP_FILE_PATH: &str = "C:\\Users\\User\\Music\\test.txt";
 
 static TRAMPOLINE_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 
@@ -53,6 +54,11 @@ static TRAMPOLINE_FUNC: AtomicPtr<()> = AtomicPtr::new(std::ptr::null_mut());
 // which implements the Send trait, allowing it to be sent to other threads
 struct SafeHINSTANCE(*mut HINSTANCE__);
 unsafe impl Send for SafeHINSTANCE {} 
+
+// This struct is used to as a wrapper to send raw pointers to other threads
+struct SafePtr(*const u8);
+unsafe impl Send for SafePtr {}
+unsafe impl Sync for SafePtr {}
 
 
 #[repr(C)]
@@ -63,6 +69,13 @@ struct MSG {
     lParam: LPARAM,
     time: DWORD,
     pt: POINT,
+}
+
+struct HookState {
+    stolen_bytes: [u8; NUM_STOLEN_BYTES],
+    protect: DWORD,
+    target_func_addr: SafePtr,
+    trampoline: SafePtr,
 }
 
 
@@ -88,51 +101,46 @@ pub extern "system" fn DllMain(hinst_dll: *mut HINSTANCE__, fdw_reason: u32, _: 
         info!("[{}] Target module name: {}", "DllMain", target_module_name);
         info!("[{}] Target function name: {}", "DllMain", target_function_name);
 
-        // Create a new thread which will await the unload signal
-        thread::spawn(move || unload(safe_hinst_dll));
+        // Setup the hook
+        if let Ok(hook_state) = setup(target_module_name, target_function_name) {
+            let hook_state_arc = Arc::new(Mutex::new(hook_state));
 
-        begin_hooking(target_module_name, target_function_name);
+            // Thread for installing the hook
+            info!("[{}] Spawning thread for hook installation", "DllMain");
+            let hook_state_arc_clone1 = Arc::clone(&hook_state_arc);
+            thread::spawn(move || install_hook(hook_state_arc_clone1, target_function_name));
+
+            // Thread for unloading the Dll and uninstalling the hook
+            info!("[{}] Spawning thread for cleanup", "DllMain");
+            let hook_state_arc_clone2 = Arc::clone(&hook_state_arc);
+            thread::spawn(move || cleanup(hook_state_arc_clone2, safe_hinst_dll));
+        } else {
+            error!("[{}] Failed to setup hook", "DllMain");
+            return false;
+        }
     } 
     true
 }
 
-fn unload(safe_hinst_dll: SafeHINSTANCE) {
-    loop {
-        // Check if the UNLOAD_FILE_PATH exists
-        if std::path::Path::new(UNLOAD_FILE_PATH).exists() {
-            info!("[{}] Unload file found - Unloading", "unload");
-            
-            // Unload the DLL
-            unsafe {
-                let hmodule = if safe_hinst_dll.0.is_null() {
-                    GetModuleHandleW(null_mut())
-                } else {
-                    safe_hinst_dll.0
-                };
-
-                if hmodule == null_mut() {
-                    error!("[{}] Failed to get handle to DLL", "unload");
-                    if let Some(win_err) = get_last_error() {
-                        error!("[{}] Windows error: {}", "unload", win_err);
-                    }
-                    return;
-                }
-
-                FreeLibraryAndExitThread(hmodule, 0);
-            }
-        }
+fn setup(target_module_name: &str, target_function_name: &str) -> Result<HookState, DWORD> {
+    // Initialize HookState
+    let mut hook_state = HookState {
+        stolen_bytes: [0; NUM_STOLEN_BYTES],
+        protect: 0,
+        target_func_addr: SafePtr(ptr::null()),
+        trampoline: SafePtr(ptr::null_mut()),
     };
-}
 
-fn begin_hooking(target_module_str: &str, target_function_name: &str) {
     // Get the address of the target function
-    let target_func_addr: *const u8 = match get_target_func_addr(target_module_str, target_function_name) {
+    let target_func_addr: *const u8 = match get_target_func_addr(target_module_name, target_function_name) {
         Ok(addr) => addr,
-        Err(_) => {
-            error!("[{}] Failed to get address of {}", "begin_hooking", target_function_name);
-            return;
+        Err(err) => {
+            error!("[{}] Failed to get address of {}", "setup", target_function_name);
+            return Err(err);
         }
     };
+
+    hook_state.target_func_addr = SafePtr(target_func_addr);
 
     // Allocate buffer for stolen bytes
     let mut stolen_bytes: [u8; NUM_STOLEN_BYTES] = [0; NUM_STOLEN_BYTES];
@@ -148,37 +156,207 @@ fn begin_hooking(target_module_str: &str, target_function_name: &str) {
         .collect();
 
     let hex_str = hex_bytes.join(" ");
+    info!("[{}] {} bytes stolen from {}: {}", "setup", NUM_STOLEN_BYTES, target_function_name, hex_str);
 
-    info!("[{}] {} bytes stolen from {}: {}", "begin_hooking", NUM_STOLEN_BYTES, target_function_name, hex_str);
+    // Add this to HookState
+    hook_state.stolen_bytes = stolen_bytes;
 
     // Now we create the trampline function
-    let trampoline: *mut u8 = match create_trampoline(&stolen_bytes, target_func_addr) {
+    let trampoline: (*mut u8, DWORD) = match create_trampoline(&stolen_bytes, target_func_addr) {
         Ok(trampoline) => trampoline,
+        Err(err) => {
+            error!("[{}] Failed to create trampoline function", "setup");
+            return Err(err);
+        }
+    };
+
+    // Add this to HookState
+    hook_state.protect = trampoline.1;
+    hook_state.trampoline = SafePtr(trampoline.0);
+
+    Ok(hook_state)
+}
+
+fn cleanup(hook_state: Arc<Mutex<HookState>>, safe_hinst_dll: SafeHINSTANCE) {
+    loop {
+        // Check if the UNLOAD_FILE_PATH exists
+        if std::path::Path::new(CLEANUP_FILE_PATH).exists() {
+            info!("[{}] Cleanup file found - Cleaning up ...", "cleanup");
+
+            // Restore the stolen bytes
+            let mut hook_state = match hook_state.lock() {
+                Ok(hook_state) => hook_state,
+                Err(_) => {
+                    error!("[{}] Failed to lock mutex", "cleanup");
+                    return;
+                }
+            };
+            
+            unsafe {
+                ptr::copy(hook_state.stolen_bytes.as_ptr(), hook_state.target_func_addr.0 as *mut u8, NUM_STOLEN_BYTES);
+            }
+
+            info!("[{}] Stolen bytes restored", "cleanup");
+
+            // Change the protection of the stolen bytes back to the original
+            let result = unsafe {
+                VirtualProtect(
+                    hook_state.target_func_addr.0 as *mut _,
+                    NUM_STOLEN_BYTES,
+                    hook_state.protect,
+                    &mut hook_state.protect as *mut _
+                )
+            };
+
+            if result == 0 {
+                error!("[{}] Failed to change protection of target function", "cleanup");
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
+                drop(hook_state);
+                return;
+            } else {
+                info!("[{}] Target function protection changed to PAGE_EXECUTE_READWRITE", "cleanup");
+            }
+
+            // Free the memory allocated for the trampoline function
+            let result = unsafe {
+                VirtualFree(hook_state.trampoline.0 as *mut _, 0, winapi::um::winnt::MEM_RELEASE)
+            };
+
+            if result == 0 {
+                error!("[{}] Failed to free memory for trampoline function", "cleanup");
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
+                drop(hook_state);
+                return;
+            } else {
+                info!("[{}] Trampoline function memory freed", "cleanup");
+            }
+
+            // Unlock the mutex
+            drop(hook_state);
+            
+            // Unload the DLL
+            unsafe {
+                let hmodule = if safe_hinst_dll.0.is_null() {
+                    GetModuleHandleW(null_mut())
+                } else {
+                    safe_hinst_dll.0
+                };
+
+                if hmodule == null_mut() {
+                    error!("[{}] Failed to get handle to DLL", "cleanup");
+                    if let Some(win_err) = get_last_error() {
+                        error!("[{}] Windows error: {}", "cleanup", win_err);
+                    }
+                    return;
+                }
+
+                info!("[{}] Unloading DLL ...", "cleanup");
+                FreeLibraryAndExitThread(hmodule, 0);
+            }
+        }
+        // Sleep for 1 second
+        thread::sleep(std::time::Duration::from_secs(1));
+    };
+}
+
+fn install_hook(hook_state: Arc<Mutex<HookState>>, target_function_name: &str) {
+    // Lock the mutex
+    let hook_state = match hook_state.lock() {
+        Ok(hook_state) => hook_state,
         Err(_) => {
-            error!("[{}] Failed to create trampoline function", "begin_hooking");
+            error!("[{}] Failed to lock mutex", "install_hook");
             return;
         }
     };
 
-    // Set the trampoline function in the global variable
+    // Store the trampoline function in the global variable
+    let trampoline: *const u8 = hook_state.trampoline.0;
     TRAMPOLINE_FUNC.store(trampoline as *mut _, Ordering::SeqCst);
 
     // Get the address of the hook function
     let hook_func_addr = hook_func as *const () as *mut u8;
 
+    // Get the target_func_addr from HookState
+    let target_func_addr: *const u8 = hook_state.target_func_addr.0;
+
     // Now we actually hook the function
     match set_hook(target_func_addr, hook_func_addr) {
         Ok(_) => {
-            info!("[{}] Hooked {} successfully", "begin_hooking", target_function_name);
-            info!("[{}] Trampoline function address: 0x{:X}", "begin_hooking", trampoline as usize);
-            info!("[{}] Hook function address: 0x{:X}", "begin_hooking", hook_func_addr as usize);
+            info!("[{}] Hooked {} successfully", "install_hook", target_function_name);
+            info!("[{}] Trampoline function address: 0x{:X}", "install_hook", trampoline as usize);
+            info!("[{}] Hook function address: 0x{:X}", "install_hook", hook_func_addr as usize);
         },
         Err(_) => {
-            error!("[{}] Failed to hook {}", "begin_hooking", target_function_name);
+            error!("[{}] Failed to hook {}", "install_hook", target_function_name);
+            drop(hook_state);
             return;
         }
     }
+
+    // Unlock the mutex
+    info!("[{}] Unlocking mutex", "install_hook");
+    drop(hook_state);
 }
+
+// fn begin_hooking(target_module_str: &str, target_function_name: &str) {
+//     // Get the address of the target function
+//     let target_func_addr: *const u8 = match get_target_func_addr(target_module_str, target_function_name) {
+//         Ok(addr) => addr,
+//         Err(_) => {
+//             error!("[{}] Failed to get address of {}", "begin_hooking", target_function_name);
+//             return;
+//         }
+//     };
+
+//     // Allocate buffer for stolen bytes
+//     let mut stolen_bytes: [u8; NUM_STOLEN_BYTES] = [0; NUM_STOLEN_BYTES];
+
+//     // Copy the stolen bytes into the buffer
+//     unsafe {
+//         ptr::copy(target_func_addr, stolen_bytes.as_mut_ptr(), NUM_STOLEN_BYTES);
+//     }
+
+//     // Log the stolen bytes
+//     let hex_bytes: Vec<String> = stolen_bytes.iter()
+//         .map(|b| format!("{:02x}", b))
+//         .collect();
+
+//     let hex_str = hex_bytes.join(" ");
+
+//     info!("[{}] {} bytes stolen from {}: {}", "begin_hooking", NUM_STOLEN_BYTES, target_function_name, hex_str);
+
+//     // Now we create the trampoline function
+//     let trampoline: *mut u8 = match create_trampoline(&stolen_bytes, target_func_addr) {
+//         Ok(trampoline) => trampoline,
+//         Err(_) => {
+//             error!("[{}] Failed to create trampoline function", "begin_hooking");
+//             return;
+//         }
+//     };
+
+//     // Set the trampoline function in the global variable
+//     TRAMPOLINE_FUNC.store(trampoline as *mut _, Ordering::SeqCst);
+
+//     // Get the address of the hook function
+//     let hook_func_addr = hook_func as *const () as *mut u8;
+
+//     // Now we actually hook the function
+//     match set_hook(target_func_addr, hook_func_addr) {
+//         Ok(_) => {
+//             info!("[{}] Hooked {} successfully", "begin_hooking", target_function_name);
+//             info!("[{}] Trampoline function address: 0x{:X}", "begin_hooking", trampoline as usize);
+//             info!("[{}] Hook function address: 0x{:X}", "begin_hooking", hook_func_addr as usize);
+//         },
+//         Err(_) => {
+//             error!("[{}] Failed to hook {}", "begin_hooking", target_function_name);
+//             return;
+//         }
+//     }
+// }
 
 fn get_target_func_addr(target_module_str: &str, target_function_name: &str) -> Result<*const u8, DWORD> {
     // Convert the target module name to a CString
@@ -235,7 +413,7 @@ fn get_target_func_addr(target_module_str: &str, target_function_name: &str) -> 
 }
 
 // This function will create the trampoline function
-fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *const u8) -> Result<*mut u8, DWORD> {
+fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *const u8) -> Result<(*mut u8, DWORD), DWORD> {
     // Set the JMP instruction size depending on the target architecture
     #[cfg(target_pointer_width = "64")]
     const JMP_INSTRUCTION_SIZE: usize = 15;
@@ -352,7 +530,7 @@ fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *c
 
     info!("[{}] Trampoline function: {}", "create_trampoline", hex_str);
 
-    Ok(trampoline)
+    Ok((trampoline, old_protect))
 }
 
 pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<(), DWORD> {
