@@ -45,11 +45,13 @@ use winapi::um::errhandlingapi::GetLastError;
 
 extern crate simplelog;
 extern crate log;
+extern crate colored;
 
 use log::{info, warn, error};
 use simplelog::*;
 use time::macros::format_description;
-use clap::Parser;
+use clap::{Parser, CommandFactory};
+use colored::*;
 
 const PID_ARRAY_SIZE: usize = 1024;
 const PROCESS_NAME_SIZE: usize = 512;
@@ -68,14 +70,14 @@ const IMAGE_FILE_MACHINE_AMD64: u16 = 0x8664;
 
 
 #[derive(Parser, Default, Debug)]
-#[command(name = "dll_injector")]
+#[command(name = "injector")]
 #[command(author = "Quin Darcy")]
 #[command(version = "0.1.0")]
 #[command(
-    help_template = "\n\n{name} \n{author-with-newline}Version: {version}{about-section} \n {usage-heading} {usage} \n\n {all-args} {tab}"
+    help_template = "\n{name}\n{author}\nVersion: {version}\n{about}\n\n{usage-heading} {usage} \n\n {all-args} {tab}\n\n"
 )]
 #[command(about, long_about = None)]
-/// A simple DLL injector
+/// A classic DLL injector written in Rust
 struct Cli {
     #[arg(short = 'n', long = "process_name")]
     /// The name of the process to inject into
@@ -88,23 +90,33 @@ struct Cli {
     #[arg(short, long)]
     /// The path to the DLL to inject
     dll_path: Option<String>,
+
+    #[arg(short, long)]
+    /// The path to the log file
+    log_path: Option<String>,
 }
 
 impl Cli {
-    pub fn validate_process_args(&self) -> Result<(), String> {
+    pub fn validate_process_args(&mut self) -> Result<(), String> {
         // Check if the user has specified both a process name and a PID
         if self.process_name.is_some() && self.pid.is_some() {
-            return Err("ArgumentConflict: You cannot specify both a process name and a PID.".to_string());
+            let err_type = "ArgumentConflict";
+            let err_msg = "You cannot specify both a process name and a PID.";
+            return Err(format!("{}: {}", err_type.bold().red(), err_msg));
         }
         
         // Check if the user has specified neither a process name nor a PID
         if self.process_name.is_none() && self.pid.is_none() {
-            return Err("MissingArguments: Either a process name or a PID must be specified.".to_string());
+            let err_type = "MissingArguments";
+            let err_msg = "Either a process name or a PID must be specified.";
+            return Err(format!("{}: {}", err_type.bold().red(), err_msg));
         }
 
         // Check if the user has specified a DLL path
         if self.dll_path.is_none() {
-            return Err("MissingArguments: The path to the DLL must be specified.".to_string());
+            let err_type = "MissingArguments";
+            let err_msg = "The path to the DLL must be specified.";
+            return Err(format!("{}: {}", err_type.bold().red(), err_msg));
         }
 
          // Check if the PID exists
@@ -112,7 +124,9 @@ impl Cli {
             unsafe {
                 let process_handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, self.pid.unwrap());
                 if process_handle.is_null() {
-                    return Err(format!("InvalidArgument: The PID '{}' does not exist.", self.pid.unwrap()));
+                    let err_type = "InvalidArgument";
+                    let err_msg = format!("The PID '{}' does not exist.", self.pid.unwrap());
+                    return Err(format!("{}: {}", err_type.bold().red(), err_msg));
                 } else {
                     // Close the handle
                     winapi::um::handleapi::CloseHandle(process_handle);
@@ -123,7 +137,32 @@ impl Cli {
         // Check if the DLL path exists
         if let Some(dll_path) = &self.dll_path {
             if !Path::new(dll_path).exists() {
-                return Err(format!("InvalidArgument: The DLL path '{}' does not exist.", dll_path));
+                let err_type = "InvalidArgument";
+                let err_msg = format!("The DLL path '{}' does not exist.", dll_path);
+                return Err(format!("{}: {}", err_type.bold().red(), err_msg));
+            }
+        }
+
+        // Check if a log file has been specified, if not set default to the current directory
+        if self.log_path.is_none() {
+            self.log_path = Some("injector.log".to_string());
+        } 
+        
+        // If a log path was specified, verify that the path is valid
+        if let Some(log_path) = &self.log_path {
+            // Check if the parent directory exists
+            if let Some(parent_dir) = Path::new(log_path).parent() {
+                if !parent_dir.exists() {
+                    // Attempt to create the parent directory
+                    match fs::create_dir_all(parent_dir) {
+                        Ok(_) => {},
+                        Err(e) => {
+                            let err_type = "InvalidArgument";
+                            let err_msg = format!("The parent directory for the log file '{}' does not exist and could not be created: {}", log_path, e);
+                            return Err(format!("{}: {}", err_type.bold().red(), err_msg));
+                        }
+                    }
+                }
             }
         }
 
@@ -779,7 +818,7 @@ fn main() {
     let _ = WriteLogger::init(LevelFilter::Info, config, File::create("injector.log").expect("Failed to initialize logger"));
 
     // Get the command line arguments
-    let args = Cli::parse();
+    let mut args = Cli::parse();
 
     // =================== BEGIN INPUT VALIDATION ===================
 
@@ -787,7 +826,9 @@ fn main() {
     let _result = match args.validate_process_args() {
         Ok(_) => (),
         Err(err) => {
-            error!("[{}] {}", "main", err);
+            println!("\n{}\n", err);
+            println!("{}\n     {}\n", "Usage:".bold().underline(), "injector.exe [OPTIONS]");
+            println!("For more information try -h or --help");
             return;
         }
     };
