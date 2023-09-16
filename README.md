@@ -15,7 +15,7 @@ With a DLL in hand and a target process selected, you can use this tool to injec
 #### Usage
 
 This tool allows you to specify either the target process name or the target process ID as well as the path to the DLL and the path to the log file. 
- ![pic](/home/arbegla/projects/rust/binaries/injector/pictures/usage.PNG)
+ ![usage](pictures/usage.PNG)
 
 **Examples**
 
@@ -23,6 +23,8 @@ This tool allows you to specify either the target process name or the target pro
 injector.exe -n "notepad" -d "my_dll.dll"
 injector.exe -p 2334 -d "this_dll.dll" -l "C:\\Users\\Public\\injector.log"
 ```
+
+![live_log](pictures/live_log.gif)
 
 #### Installation
 
