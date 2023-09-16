@@ -1,33 +1,46 @@
-03:21:39.762368 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
-03:21:39.7624594 [INFO] [DllMain] Base address of the DLL: 0x7fffe40d0000
-03:21:39.7624957 [INFO] [DllMain] Target module name: USER32.dll
-03:21:39.7625924 [INFO] [DllMain] Target function name: GetMessageW
-03:21:39.7626312 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FFFEF080000
-03:21:39.7628764 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FFFEF0A1BE0
-03:21:39.7630101 [INFO] [setup] 18 bytes stolen from GetMessageW: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8
-03:21:39.7631678 [INFO] [create_trampoline] Trampoline function allocated at 0x19668020000
-03:21:39.7632101 [INFO] [create_trampoline] Trampoline function protection changed to PAGE_EXECUTE_READWRITE
-03:21:39.7632878 [INFO] [create_trampoline] Trampoline function: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 49 ba f2 1b 0a ef ff 7f 00 00 41 ff e2 00 00
-03:21:39.7633228 [INFO] [DllMain] Spawning thread for hook installation
-03:21:39.763413 [INFO] [DllMain] Spawning thread for cleanup
-03:21:39.7637601 [INFO] [set_hook] Bytes written to target function: "48 b8 20 4c 0d e4 ff 7f 00 00 ff e0 00 00"
-03:21:39.7638139 [INFO] [install_hook] Hooked GetMessageW successfully
-03:21:39.7638509 [INFO] [install_hook] Trampoline function address: 0x19668020000
-03:21:39.7638848 [INFO] [install_hook] Hook function address: 0x7FFFE40D4C20
-03:21:39.7639174 [INFO] [install_hook] Unlocking mutex
-03:24:01.9976777 [INFO] [log_key] Translated character: t
-03:24:02.3018635 [INFO] [log_key] Translated character: h
-03:24:02.4716292 [INFO] [log_key] Translated character: i
-03:24:02.5626877 [INFO] [log_key] Translated character: s
-03:24:02.6709177 [INFO] [log_key] Translated character:  
-03:24:02.8246627 [INFO] [log_key] Translated character: i
-03:24:02.9265201 [INFO] [log_key] Translated character: s
-03:24:03.0415203 [INFO] [log_key] Translated character:  
-03:24:03.2275577 [INFO] [log_key] Translated character: a
-03:24:03.4259515 [INFO] [log_key] Translated character: a
-03:24:04.7116984 [INFO] [log_key] Translated character:  
-03:24:04.9148335 [INFO] [log_key] Translated character: t
-03:24:05.0136005 [INFO] [log_key] Translated character: e
-03:24:05.0776699 [INFO] [log_key] Translated character: s
-03:24:05.1596025 [INFO] [log_key] Translated character: t
-04:14:52.7604219 [INFO] [cleanup] Cleanup file found - Cleaning up ...
+01:50:02.6290114 [INFO] [DllMain] fwd_reason: DLL_PROCESS_ATTACH
+01:50:02.6291139 [INFO] [DllMain] Base address of the DLL: 0x7ffbc02f0000
+01:50:02.6291513 [INFO] [DllMain] Target module name: USER32.dll
+01:50:02.6291858 [INFO] [DllMain] Target function name: GetMessageW
+01:50:02.6292235 [INFO] [get_exe_base_address] "USER32.dll" base address: 0x7FFBC6B00000
+01:50:02.6292963 [INFO] [get_target_func_addr] "GetMessageW" address: 0x7FFBC6B21BE0
+01:50:02.6293624 [INFO] [setup] Stealing 18 bytes from address 0x7FFBC6B21BE0 to 0x712AAFF5F0
+01:50:02.629411 [INFO] [setup] Stolen bytes: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8
+01:50:02.6294594 [INFO] [create_trampoline] Trampoline function allocated at 0x191B9160000
+01:50:02.6295008 [INFO] [create_trampoline] Trampoline function protection changed to PAGE_EXECUTE_READWRITE
+01:50:02.6295394 [INFO] [create_trampoline] Trampoline function: 40 53 48 83 ec 50 41 8b c1 48 8b d9 45 8b c8 44 0b c8 49 ba f2 1b b2 c6 fb 7f 00 00 41 ff e2 00 00
+01:50:02.6295753 [INFO] [DllMain] Spawning thread for hook installation
+01:50:02.6296425 [INFO] [DllMain] Spawning thread for cleanup
+01:50:02.6297547 [INFO] [install_hook] Mutex locked
+01:50:02.6297953 [INFO] [set_hook] Target function protection changed to PAGE_EXECUTE_READWRITE
+01:50:02.6298453 [INFO] [set_hook] Bytes written to target function: "48 b8 e0 57 2f c0 fb 7f 00 00 ff e0 00 00"
+01:50:02.6298952 [INFO] [set_hook] Target function protection restored
+01:50:02.6299354 [INFO] [install_hook] Hooked GetMessageW successfully
+01:50:02.6299746 [INFO] [install_hook] Trampoline function address: 0x191B9160000
+01:50:02.6300092 [INFO] [install_hook] Hook function address: 0x7FFBC02F57E0
+01:50:02.6300434 [INFO] [install_hook] Dropping mutex
+01:50:05.177267 [INFO] [log_key] Translated character: t
+01:50:05.2605117 [INFO] [log_key] Translated character: h
+01:50:05.4022022 [INFO] [log_key] Translated character: i
+01:50:05.4891418 [INFO] [log_key] Translated character: s
+01:50:05.594168 [INFO] [log_key] Translated character:  
+01:50:05.7343693 [INFO] [log_key] Translated character: i
+01:50:05.8162593 [INFO] [log_key] Translated character: s
+01:50:05.928274 [INFO] [log_key] Translated character:  
+01:50:06.0663638 [INFO] [log_key] Translated character: a
+01:50:06.1709417 [INFO] [log_key] Translated character:  
+01:50:06.3332529 [INFO] [log_key] Translated character: t
+01:50:06.4223014 [INFO] [log_key] Translated character: e
+01:50:06.4680765 [INFO] [log_key] Translated character: s
+01:50:06.5550264 [INFO] [log_key] Translated character: t
+01:50:20.7946369 [INFO] [cleanup] Cleanup file found - Cleaning up ...
+01:50:20.7946819 [INFO] [cleanup] Mutex locked
+01:50:20.7947113 [INFO] [cleanup] Getting memory information for target function at address: 0x7FFBC6B21BE0
+01:50:20.7947479 [WARN] [cleanup] Target function is not writable
+01:50:20.7947773 [INFO] [cleanup] Changing protection of target function to PAGE_EXECUTE_READWRITE
+01:50:20.794812 [INFO] [cleanup] Copying stolen bytes back to address: 0x7FFBC6B21BE0
+01:50:20.7948449 [INFO] [cleanup] Restoring memory protection of target function
+01:50:20.7948779 [INFO] [cleanup] Freeing memory for trampoline function at address: 0x191B9160000
+01:50:20.7949221 [INFO] [cleanup] Trampoline function memory freed
+01:50:20.7949593 [INFO] [cleanup] Dropping mutex
+01:50:20.7949898 [INFO] [cleanup] Unloading DLL with handle: 0x7FFBC02F0000
