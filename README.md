@@ -26,7 +26,7 @@ injector.exe -p 2334 -d "this_dll.dll" -l "C:\\Users\\Public\\injector.log"
 
 
 
-An example of the robust logging the injector gives
+An example of the extensive logging the injector gives
 
 ![live_log](pictures/live_log.gif)
 
