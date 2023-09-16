@@ -24,6 +24,8 @@ injector.exe -n "notepad" -d "my_dll.dll"
 injector.exe -p 2334 -d "this_dll.dll" -l "C:\\Users\\Public\\injector.log"
 ```
 
+![live_log](/home/arbegla/projects/rust/binaries/injector/pictures/live_log.gif)
+
 #### Installation
 
 Before you begin, ensure you have met the following requirements.
