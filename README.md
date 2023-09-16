@@ -2,7 +2,7 @@
 
 This is a tool written in Rust for injecting DLLs into running Windows processes. It utilizes a classic DLL injection technique and includes robust error handling and detailed logging of its operation. 
 
-#### Overview
+### Overview
 
 With a DLL in hand and a target process selected, you can use this tool to inject the DLL into the process. The technique used follows this general structure:
 
@@ -12,7 +12,7 @@ With a DLL in hand and a target process selected, you can use this tool to injec
 
 3. Create a remote thread in the target process using `CreateRemoteThread` and within this thread, run `LoadLibraryA` to load your DLL.
 
-#### Usage
+### Usage
 
 This tool allows you to specify either the target process name or the target process ID as well as the path to the DLL and the path to the log file. 
  ![usage](pictures/usage.PNG)
@@ -34,7 +34,7 @@ A clip of Process Explorer showing the moment the DLL gets injected
 
 ![live_procexp](pictures/live_proc_exp.gif)
 
-#### Installation
+### Installation
 
 Before you begin, ensure you have met the following requirements.
 
