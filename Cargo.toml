@@ -12,4 +12,3 @@ simplelog = "0.12.1"
 time = "0.3.23"
 rand = "0.8.5"
 clap = { version = "4.4.2", features = ["derive"] }
-colored = "2.0.4"

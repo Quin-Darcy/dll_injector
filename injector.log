@@ -1,0 +1,45 @@
+21:02:03.8552209 [INFO] [main] DLL is 64-bit
+21:02:03.8554527 [INFO] [get_running_procs] Enumerating processes
+21:02:03.8568819 [INFO] [get_running_procs] Bytes returned: 580 bytes
+21:02:03.8569296 [INFO] [get_running_procs] Number of processes enumerated: 145
+21:02:03.8569679 [INFO] [get_running_procs] Iterating through process ID and retrieving module base name
+21:02:03.8687862 [INFO] [get_running_procs] Processes opened: 63
+21:02:03.8688489 [INFO] [get_running_procs] Processes not opened: 82
+21:02:03.8688879 [INFO] [get_running_procs] Last error: Access is denied.
+21:02:03.8689265 [INFO] [is_target_running] Checking if target process (notepad) is running
+21:02:03.8689986 [INFO] [is_target_running] Target process is running: notepad.exe (664)
+21:02:03.8690482 [INFO] [get_target_proc_handle] Getting handle to target process (664)
+21:02:03.8690974 [INFO] [get_target_proc_handle] Successfully opened target process (664) with handle 0xa4
+21:02:03.8691492 [INFO] [main] Target process is 64-bit
+21:02:03.8691864 [INFO] [allocate_memory] Allocating memory in target process with handle 0xa4
+21:02:03.8692371 [INFO] [allocate_memory] Successfully allocated memory into target process with handle 0xa4
+21:02:03.86928 [INFO] [allocate_memory] Base address of allocated memory: 0x245cad50000
+21:02:03.8693221 [INFO] [allocate_memory] Size of allocated memory: 108 bytes
+21:02:03.8693658 [INFO] [write_memory] Writing "C:\\Users\\User\\Documents\\rust\\libraries\\api_hooks\\target\\x86_64-pc-windows-msvc\\release\\getmessagew_hook.dll" to allocated memory at base address 0x245cad50000
+21:02:03.8696676 [INFO] [write_memory] Bytes written: 108
+21:02:03.8697133 [INFO] [main] Reading back the written DLL path from allocated memory for validation
+21:02:03.8697587 [INFO] [read_memory] Contents of read back data: C:\Users\User\Documents\rust\libraries\api_hooks\target\x86_64-pc-windows-msvc\release\getmessagew_hook.dll
+21:02:03.8698002 [INFO] [main] The written DLL path C:\Users\User\Documents\rust\libraries\api_hooks\target\x86_64-pc-windows-msvc\release\getmessagew_hook.dll matches with the original DLL path
+21:02:03.8698405 [INFO] [get_module_base_address] Getting kernel32.dll base address in target process
+21:02:03.8700382 [INFO] [get_module_base_address] kernel32.dll base address: 0x7ff98ad60000 in target process
+21:02:03.870116 [INFO] [get_function_offset] Retrieving handle to "kernel32.dll" module loaded in current process
+21:02:03.8701921 [INFO] [get_function_offset] "kernel32.dll" module handle: 0x7ff98ad60000 in current_process
+21:02:03.8702696 [INFO] [get_function_offset] Retrieving address of "LoadLibraryA" function in current process
+21:02:03.8703429 [INFO] [get_function_offset] "LoadLibraryA" function address: 0x7ff98ad80800 in current process
+21:02:03.8704323 [INFO] [get_function_offset] Calculated offset of "LoadLibraryA" function in "kernel32.dll" module: 0x20800
+21:02:03.8705771 [INFO] [get_function_addr] Calculating address of "LoadLibraryA" in target process
+21:02:03.8706441 [INFO] [get_function_addr] Address of "LoadLibraryA" in target process: 0x7ff98ad80800
+21:02:03.870714 [INFO] [create_remote_thread] Creating remote thread in target process (0xa4)
+21:02:03.8708113 [INFO] [create_remote_thread] Handle to remote thread: 0xac
+21:02:03.8708589 [INFO] [main] Waiting for remote thread to finish execution of LoadLibraryA
+21:02:03.8753842 [INFO] [main] Remote thread finished execution of LoadLibraryA
+21:02:03.8754544 [INFO] [get_module_base_address] Getting getmessagew_hook.dll base address in target process
+21:02:03.8763608 [INFO] [get_module_base_address] getmessagew_hook.dll base address: 0x7ff96a070000 in target process
+21:02:03.8764177 [INFO] [main] Validating handle to DLL that was loaded
+21:02:03.8764788 [INFO] [main] Valid DLL handle
+21:02:03.8765257 [INFO] [cleanup] Allocated memory at address: 0x245cad50000 freed successfully
+21:02:03.8765735 [INFO] [cleanup] Closing handle to thread: 0xac
+21:02:03.8766137 [INFO] [cleanup] Waiting for thread: 0xac to finish execution
+21:02:03.8766563 [INFO] [cleanup] Thread with handle: 0xac has finished execution
+21:02:03.8767377 [INFO] [cleanup] Handle to thread: 0xac closed successfully
+21:02:03.8767835 [INFO] [cleanup] Target process handle: 0xa4 closed successfully

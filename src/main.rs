@@ -45,13 +45,11 @@ use winapi::um::errhandlingapi::GetLastError;
 
 extern crate simplelog;
 extern crate log;
-extern crate colored;
 
 use log::{info, warn, error};
 use simplelog::*;
 use time::macros::format_description;
 use clap::{Parser, CommandFactory};
-use colored::*;
 
 const PID_ARRAY_SIZE: usize = 1024;
 const PROCESS_NAME_SIZE: usize = 512;
@@ -102,21 +100,21 @@ impl Cli {
         if self.process_name.is_some() && self.pid.is_some() {
             let err_type = "ArgumentConflict";
             let err_msg = "You cannot specify both a process name and a PID.";
-            return Err(format!("{}: {}", err_type.bold().red(), err_msg));
+            return Err(format!("{}: {}", err_type, err_msg));
         }
         
         // Check if the user has specified neither a process name nor a PID
         if self.process_name.is_none() && self.pid.is_none() {
             let err_type = "MissingArguments";
             let err_msg = "Either a process name or a PID must be specified.";
-            return Err(format!("{}: {}", err_type.bold().red(), err_msg));
+            return Err(format!("{}: {}", err_type, err_msg));
         }
 
         // Check if the user has specified a DLL path
         if self.dll_path.is_none() {
             let err_type = "MissingArguments";
             let err_msg = "The path to the DLL must be specified.";
-            return Err(format!("{}: {}", err_type.bold().red(), err_msg));
+            return Err(format!("{}: {}", err_type, err_msg));
         }
 
          // Check if the PID exists
@@ -126,7 +124,7 @@ impl Cli {
                 if process_handle.is_null() {
                     let err_type = "InvalidArgument";
                     let err_msg = format!("The PID '{}' does not exist.", self.pid.unwrap());
-                    return Err(format!("{}: {}", err_type.bold().red(), err_msg));
+                    return Err(format!("{}: {}", err_type, err_msg));
                 } else {
                     // Close the handle
                     winapi::um::handleapi::CloseHandle(process_handle);
@@ -139,7 +137,7 @@ impl Cli {
             if !Path::new(dll_path).exists() {
                 let err_type = "InvalidArgument";
                 let err_msg = format!("The DLL path '{}' does not exist.", dll_path);
-                return Err(format!("{}: {}", err_type.bold().red(), err_msg));
+                return Err(format!("{}: {}", err_type, err_msg));
             }
         }
 
@@ -159,7 +157,7 @@ impl Cli {
                         Err(e) => {
                             let err_type = "InvalidArgument";
                             let err_msg = format!("The parent directory for the log file '{}' does not exist and could not be created: {}", log_path, e);
-                            return Err(format!("{}: {}", err_type.bold().red(), err_msg));
+                            return Err(format!("{}: {}", err_type, err_msg));
                         }
                     }
                 }
@@ -827,7 +825,7 @@ fn main() {
         Ok(_) => (),
         Err(err) => {
             println!("\n{}\n", err);
-            println!("{}\n     {}\n", "Usage:".bold().underline(), "injector.exe [OPTIONS]");
+            println!("{}\n     {}\n", "Usage:", "injector.exe [OPTIONS]");
             println!("For more information try -h or --help");
             return;
         }
