@@ -24,7 +24,15 @@ injector.exe -n "notepad" -d "my_dll.dll"
 injector.exe -p 2334 -d "this_dll.dll" -l "C:\\Users\\Public\\injector.log"
 ```
 
+
+
+An example of the robust logging the injector gives
+
 ![live_log](pictures/live_log.gif)
+
+A clip of Process Explorer showing the moment the DLL gets injected
+
+![live_procexp](pictures/live_proc_exp.gif)
 
 #### Installation
 
