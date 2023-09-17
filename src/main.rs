@@ -1154,6 +1154,5 @@ fn main() {
             return;
         }
     }
-
     cleanup(Some(target_proc_handle), Some(dll_path_ptr), Some(loadlib_remote_thread_handle), None);
 }
