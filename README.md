@@ -74,5 +74,8 @@ cargo build --release
    5. Click "New" and add the new path: `C:\Projects\injector\target\release`
    
    6. Click "OK" to save.
+
+## Shameless Recommendation
+Don't know what to inject? Might I recommend this [great tool](https://github.com/Quin-Darcy/hooky) which uses [Tera](https://docs.rs/tera/latest/tera/) for templating and generates a custom DLL designed to hook any Windows API of your choice! The tool gives you a robust `.rs` file which you only need to fill in the generic hook function included in the template. Everything else is done for you! It also gives you a complete `Cargo.toml` and everything is nicely tucked in its own directory. 
    
    Now, open a new Command Prompt and you should be able to use `injector` as a command.
